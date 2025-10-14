@@ -40,6 +40,13 @@ pub struct MessageBuilder<'buf, State> {
     _state: PhantomData<State>,
 }
 
+impl<'buf, State> MessageBuilder<'buf, State> {
+    /// Returns the remaining space in the buffer.
+    pub fn remaining_buffer(&self) -> usize {
+        self.buffer.len() - self.offset
+    }
+}
+
 impl<'buf> MessageBuilder<'buf, NeedsBuffer> {
     /// Create a new packet builder with the given buffer. The buffer must be at least 4 bytes long.
     pub fn new(buffer: &'buf mut [u8]) -> BuilderResult<'buf, NeedsHeader> {
