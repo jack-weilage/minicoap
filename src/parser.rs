@@ -105,12 +105,11 @@ impl<'a> Message<'a> {
 
             offset += delta_ext_len;
 
-            let value_len = if length <= 12 {
-                length as usize
-            } else if length == 13 {
-                buffer[offset] as usize + 13
-            } else {
-                u16::from_be_bytes([buffer[offset], buffer[offset + 1]]) as usize + 269
+            let value_len = match length {
+                0..=12 => length as usize,
+                13 => buffer[offset] as usize + 13,
+                14 => u16::from_be_bytes([buffer[offset], buffer[offset + 1]]) as usize + 269,
+                _ => return Err(CoapParseError::InvalidOptionLength),
             };
 
             offset += length_ext_len;
@@ -127,19 +126,15 @@ impl<'a> Message<'a> {
             data: &buffer[options_start..options_end],
         };
 
-        let payload = payload_start.and_then(|start| {
-            if start < buffer.len() {
-                Some(&buffer[start..])
-            } else if start == buffer.len() {
-                None
-            } else {
-                None
-            }
-        });
+        let payload = payload_start
+            .map(|start| {
+                if start >= buffer.len() {
+                    return Err(CoapParseError::PayloadMarkerWithoutPayload);
+                }
 
-        if payload_start.is_some() && payload.is_none() {
-            return Err(CoapParseError::PayloadMarkerWithoutPayload);
-        }
+                Ok(&buffer[start..])
+            })
+            .transpose()?;
 
         Ok(Message {
             version,
