@@ -134,6 +134,56 @@ pub enum RequestCode {
     ///
     /// Source: [RFC 7252 5.8.4](https://datatracker.ietf.org/doc/html/rfc7252#section-5.8.4)
     Delete = coap_code!(0, 04),
+    /// The FETCH method is used to obtain a representation of a resource, specified by a number
+    /// of request parameters. Unlike GET, which requests the full resource, FETCH allows the client
+    /// to ask the server to produce a representation as described by the request parameters
+    /// (including request options and payload) based on the resource specified by the request URI.
+    ///
+    /// The body of the request (which may be constructed from multiple payloads using the block
+    /// protocol) together with the request options defines the request parameters. The request body
+    /// specifies a media type that describes how to select or filter information from the resource.
+    ///
+    /// FETCH is both safe and idempotent with regards to the resource identified by the request URI.
+    /// That is, the performance of a FETCH is not intended to alter the state of the targeted resource.
+    ///
+    /// A successful response to a FETCH request is cacheable; the request body is part of the cache key.
+    /// Specifically, 2.05 (Content) response codes are a typical way to respond to a FETCH request.
+    ///
+    /// Source: [RFC 8132 2](https://datatracker.ietf.org/doc/html/rfc8132#section-2)
+    Fetch = coap_code!(0, 05),
+    /// The PATCH method requests that a set of changes described in the request payload be applied
+    /// to the target resource. The set of changes is represented in a format identified by a media
+    /// type. If the Request-URI does not point to an existing resource, the server MAY create a new
+    /// resource with that URI, depending on the PATCH document type and permissions.
+    ///
+    /// PATCH is not safe and not idempotent. The difference between PUT and PATCH is that PATCH
+    /// allows partial updates: clients cannot use PUT while supplying just the update, but they
+    /// might be able to use PATCH.
+    ///
+    /// PATCH is atomic. The server MUST apply the entire set of changes atomically and never provide
+    /// a partially modified representation to a concurrently executed GET request.
+    ///
+    /// Restrictions to a PATCH request can be made by including the If-Match or If-None-Match
+    /// options in the request.
+    ///
+    /// Source: [RFC 8132 3](https://datatracker.ietf.org/doc/html/rfc8132#section-3)
+    Patch = coap_code!(0, 06),
+    /// The iPATCH method is identical to the PATCH method, except that it is idempotent.
+    ///
+    /// A client can mark a request as idempotent by using the iPATCH method instead of the PATCH
+    /// method. This is the only difference between the two. The indication of idempotence may enable
+    /// the server to keep less state about the interaction; some constrained servers may only
+    /// implement the iPATCH variant for this reason.
+    ///
+    /// iPATCH is not safe but is idempotent, similar to the CoAP PUT method. Like PATCH, iPATCH
+    /// is atomic and the server MUST apply the entire set of changes atomically.
+    ///
+    /// There is no requirement on the server to check that the client's intention that the request
+    /// be idempotent is fulfilled, although there is diagnostic value in that check for less-
+    /// constrained implementations.
+    ///
+    /// Source: [RFC 8132 3](https://datatracker.ietf.org/doc/html/rfc8132#section-3)
+    IPatch = coap_code!(0, 07),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
@@ -233,6 +283,18 @@ pub enum ResponseCode {
     ///
     /// Source: [RFC 7959 2.9.2](https://datatracker.ietf.org/doc/html/rfc7959#section-2.9.2)
     RequestEntityIncomplete = coap_code!(4, 08),
+    /// If the modification specified by a PATCH or iPATCH request causes the resource to enter an
+    /// inconsistent state that the server cannot resolve, the server can return the 4.09 (Conflict)
+    /// CoAP response. The server SHOULD generate a payload that includes enough information for a
+    /// user to recognize the source of the conflict.
+    ///
+    /// The server MAY return the actual resource state to provide the client with the means to create
+    /// a new consistent resource state. Such a situation might be encountered when a structural
+    /// modification is applied to a configuration data store but the structures being modified do
+    /// not exist.
+    ///
+    /// Source: [RFC 8132 3.4](https://datatracker.ietf.org/doc/html/rfc8132#section-3.4)
+    Conflict = coap_code!(4, 09),
     /// This Response Code is like HTTP 403 "Forbidden".
     ///
     /// Source: [RFC 7252 5.9.2.4](https://datatracker.ietf.org/doc/html/rfc7252#section-5.9.2.4)
@@ -273,6 +335,25 @@ pub enum ResponseCode {
     ///
     /// Source: [RFC 7252 5.9.2.10](https://datatracker.ietf.org/doc/html/rfc7252#section-5.9.2.10)
     UnsupportedContentFormat = coap_code!(4, 15),
+    /// This situation occurs when the payload of a PATCH or FETCH request is determined to be valid
+    /// (i.e., well-formed and supported) but the server is unable to or is incapable of processing
+    /// the request.
+    ///
+    /// For PATCH/iPATCH, this might include situations such as:
+    /// - The server has insufficient computing resources to complete the request successfully
+    ///   (though 4.13 Request Entity Too Large may be more appropriate)
+    /// - The resource specified in the request becomes invalid by applying the payload
+    ///   (though 4.09 Conflict may be more appropriate for this case)
+    ///
+    /// For FETCH, this can be returned when the server is unable to process a well-formed and
+    /// supported request payload.
+    ///
+    /// In case there are more specific errors that provide additional insight into the problem,
+    /// those should be used instead.
+    ///
+    /// Source: [RFC 8132 2.2](https://datatracker.ietf.org/doc/html/rfc8132#section-2.2),
+    /// [RFC 8132 3.4](https://datatracker.ietf.org/doc/html/rfc8132#section-3.4)
+    UnprocessableEntity = coap_code!(4, 22),
 
     /// This Response Code is like HTTP 500 "Internal Server Error".
     ///
@@ -577,6 +658,26 @@ pub enum ContentFormat {
     ApplicationExi = 47,
     /// application/json
     ApplicationJson = 50,
+    /// application/json-patch+json
+    ///
+    /// This media type is used to describe a JSON document structure for expressing a sequence of
+    /// operations to apply to a JSON document. It is suitable for use with the HTTP PATCH method
+    /// and the CoAP PATCH and iPATCH methods.
+    ///
+    /// Source: [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902),
+    /// [RFC 8132 6](https://datatracker.ietf.org/doc/html/rfc8132#section-6)
+    ApplicationJsonPatch = 51,
+    /// application/merge-patch+json
+    ///
+    /// This media type is used to describe a JSON document structure for expressing a set of changes
+    /// to be applied to a target JSON document using the JSON Merge Patch algorithm. It is suitable
+    /// for use with the HTTP PATCH method and the CoAP PATCH and iPATCH methods.
+    ///
+    /// JSON Merge Patch is less expressive than JSON Patch but is simpler to use for basic updates.
+    ///
+    /// Source: [RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396),
+    /// [RFC 8132 6](https://datatracker.ietf.org/doc/html/rfc8132#section-6)
+    ApplicationMergePatch = 52,
 
     /// An unrecognized content format. CoAP allows for content formats beyond those
     /// defined in the base specification.
