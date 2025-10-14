@@ -1,7 +1,6 @@
 //! # `minicoap`
 
 #![no_std]
-#![deny(clippy::cargo)]
 #![deny(clippy::cargo, missing_docs)]
 #![warn(clippy::all)]
 

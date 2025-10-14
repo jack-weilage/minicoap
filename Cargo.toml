@@ -2,6 +2,10 @@
 name = "minicoap"
 version = "0.1.0"
 edition = "2024"
+description = "A tiny, zero-copy Rust library for parsing and building CoAP (Constrained Application Protocol) messages."
+categories = ["embedded", "network-programming", "no-std::no-alloc"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jack-weilage/minicoap"
 
 [dependencies]
 num_enum = { version = "0.7.4", default-features = false }
