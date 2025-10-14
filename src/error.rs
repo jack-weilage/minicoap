@@ -5,6 +5,7 @@ pub enum CoapBuildError {
     BufferTooSmall,
     TokenTooLong(usize),
     PayloadMarkerWithoutPayload,
+    OptionNumberOutOfOrder,
 }
 
 impl core::fmt::Display for CoapBuildError {
@@ -17,6 +18,7 @@ impl core::fmt::Display for CoapBuildError {
             CoapBuildError::PayloadMarkerWithoutPayload => {
                 write!(f, "Payload marker without payload")
             }
+            CoapBuildError::OptionNumberOutOfOrder => write!(f, "Option number out of order"),
         }
     }
 }

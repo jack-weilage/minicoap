@@ -168,6 +168,11 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
         value: &[u8],
     ) -> BuilderResult<'buf, NeedsPayload> {
         let option_number = option_number.into();
+
+        if option_number < self.last_option_number {
+            return Err(CoapBuildError::OptionNumberOutOfOrder);
+        }
+
         let delta = option_number - self.last_option_number;
 
         let (delta_field, delta_ext) = match delta {
