@@ -1,4 +1,13 @@
 //! # `minicoap`
+//!
+//! A minimal, zero-copy CoAP message parser and builder for embedded systems.
+//!
+//! ## Supported RFCs
+//!
+//! - [RFC 7252](https://datatracker.ietf.org/doc/html/rfc7252): The Constrained Application Protocol (CoAP)
+//! - [RFC 7959](https://datatracker.ietf.org/doc/html/rfc7959): Block-Wise Transfers in CoAP
+//! - [RFC 8132](https://datatracker.ietf.org/doc/html/rfc8132): PATCH and FETCH Methods for CoAP
+//! - [RFC 9175](https://datatracker.ietf.org/doc/html/rfc9175): CoAP: Echo, Request-Tag, and Token Processing
 
 #![no_std]
 #![deny(clippy::cargo, missing_docs)]
@@ -609,6 +618,25 @@ pub enum OptionNumber {
     /// Source: [RFC 7252 5.10.9](https://datatracker.ietf.org/doc/html/rfc7252#section-5.10.9),
     /// [RFC 7959 4](https://datatracker.ietf.org/doc/html/rfc7959#section-4)
     Size1 = 60,
+    /// The Echo Option enables a CoAP server to verify the freshness of a request or to force a
+    /// client to demonstrate reachability at its claimed network address. The Echo option value is
+    /// a challenge from the server to the client, included in a response and echoed back to the
+    /// server in subsequent requests.
+    ///
+    /// The option value is opaque and should be treated as such by clients. Typical length is
+    /// 1-40 bytes. This is an elective option that is safe to forward and not part of the cache key.
+    ///
+    /// Source: [RFC 9175 2.2](https://datatracker.ietf.org/doc/html/rfc9175#section-2.2)
+    Echo = 252,
+    /// The Request-Tag Option allows a CoAP server to match block-wise message fragments belonging
+    /// to the same request. It provides a short-lived identifier set by the client to distinguish
+    /// concurrent block-wise request operations on a single resource.
+    ///
+    /// The option value is opaque with a length of 0-8 bytes. This is an elective option that is
+    /// safe to forward, part of the cache key, and repeatable.
+    ///
+    /// Source: [RFC 9175 3.2](https://datatracker.ietf.org/doc/html/rfc9175#section-3.2)
+    RequestTag = 292,
 
     /// An unrecognized option number. This is used as a catch-all for option numbers that are not
     /// explicitly defined in this implementation. CoAP endpoints can ignore elective options they
