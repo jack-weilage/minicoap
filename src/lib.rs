@@ -686,16 +686,83 @@ impl OptionNumber {
 #[repr(u16)]
 pub enum ContentFormat {
     /// text/plain; charset=utf-8
+    ///
+    /// Source: [RFC 2046](https://datatracker.ietf.org/doc/html/rfc2046),
+    /// [RFC 3676](https://datatracker.ietf.org/doc/html/rfc3676),
+    /// [RFC 5147](https://datatracker.ietf.org/doc/html/rfc5147)
     TextPlain = 0,
+    /// application/cose; cose-type="cose-encrypt0"
+    ///
+    /// CBOR Object Signing and Encryption (COSE) - Encrypt0 message type.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseEncrypt0 = 16,
+    /// application/cose; cose-type="cose-mac0"
+    ///
+    /// CBOR Object Signing and Encryption (COSE) - Mac0 message type.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseMac0 = 17,
+    /// application/cose; cose-type="cose-sign1"
+    ///
+    /// CBOR Object Signing and Encryption (COSE) - Sign1 message type.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseSign1 = 18,
+    /// application/ace+cbor
+    ///
+    /// Authentication and Authorization for Constrained Environments (ACE) in CBOR.
+    ///
+    /// Source: [RFC 9200](https://datatracker.ietf.org/doc/html/rfc9200)
+    ApplicationAceCbor = 19,
+    /// image/gif
+    ///
+    /// Graphics Interchange Format.
+    ///
+    /// Source: <https://www.w3.org/Graphics/GIF/spec-gif89a.txt>
+    ImageGif = 21,
+    /// image/jpeg
+    ///
+    /// JPEG image format.
+    ///
+    /// Source: ISO/IEC 10918-5
+    ImageJpeg = 22,
+    /// image/png
+    ///
+    /// Portable Network Graphics.
+    ///
+    /// Source: PNG Specification
+    ImagePng = 23,
     /// application/link-format
+    ///
+    /// CoRE Link Format for resource discovery.
+    ///
+    /// Source: [RFC 6690](https://datatracker.ietf.org/doc/html/rfc6690)
     ApplicationLinkFormat = 40,
     /// application/xml
+    ///
+    /// Extensible Markup Language.
+    ///
+    /// Source: [RFC 3023](https://datatracker.ietf.org/doc/html/rfc3023)
     ApplicationXml = 41,
     /// application/octet-stream
+    ///
+    /// Arbitrary binary data.
+    ///
+    /// Source: [RFC 2045](https://datatracker.ietf.org/doc/html/rfc2045),
+    /// [RFC 2046](https://datatracker.ietf.org/doc/html/rfc2046)
     ApplicationOctetStream = 42,
     /// application/exi
+    ///
+    /// Efficient XML Interchange format.
+    ///
+    /// Source: Efficient XML Interchange (EXI) Format 1.0 (Second Edition), February 2014
     ApplicationExi = 47,
     /// application/json
+    ///
+    /// JavaScript Object Notation.
+    ///
+    /// Source: [RFC 8259](https://datatracker.ietf.org/doc/html/rfc8259)
     ApplicationJson = 50,
     /// application/json-patch+json
     ///
@@ -717,6 +784,114 @@ pub enum ContentFormat {
     /// Source: [RFC 7396](https://datatracker.ietf.org/doc/html/rfc7396),
     /// [RFC 8132 6](https://datatracker.ietf.org/doc/html/rfc8132#section-6)
     ApplicationMergePatch = 52,
+    /// application/cbor
+    ///
+    /// Concise Binary Object Representation.
+    ///
+    /// Source: [RFC 8949](https://datatracker.ietf.org/doc/html/rfc8949)
+    ApplicationCbor = 60,
+    /// application/cwt
+    ///
+    /// CBOR Web Token - a compact means of representing claims to be transferred between parties.
+    ///
+    /// Source: [RFC 8392](https://datatracker.ietf.org/doc/html/rfc8392)
+    ApplicationCwt = 61,
+    /// application/multipart-core
+    ///
+    /// Multipart content format for CoAP.
+    ///
+    /// Source: [RFC 8710](https://datatracker.ietf.org/doc/html/rfc8710)
+    ApplicationMultipartCore = 62,
+    /// application/cbor-seq
+    ///
+    /// CBOR Sequence - a concatenation of zero or more CBOR data items.
+    ///
+    /// Source: [RFC 8742](https://datatracker.ietf.org/doc/html/rfc8742)
+    ApplicationCborSeq = 63,
+    /// application/edhoc+cbor-seq
+    ///
+    /// Ephemeral Diffie-Hellman Over COSE in CBOR sequence format.
+    ///
+    /// Source: [RFC 9528](https://datatracker.ietf.org/doc/html/rfc9528)
+    ApplicationEdhocCborSeq = 64,
+    /// application/cid-edhoc+cbor-seq
+    ///
+    /// Connection Identifier EDHOC in CBOR sequence format.
+    ///
+    /// Source: [RFC 9528](https://datatracker.ietf.org/doc/html/rfc9528)
+    ApplicationCidEdhocCborSeq = 65,
+    /// application/cose; cose-type="cose-encrypt"
+    ///
+    /// CBOR Object Signing and Encryption (COSE) - Encrypt message type.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseEncrypt = 96,
+    /// application/cose; cose-type="cose-mac"
+    ///
+    /// CBOR Object Signing and Encryption (COSE) - Mac message type.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseMac = 97,
+    /// application/cose; cose-type="cose-sign"
+    ///
+    /// CBOR Object Signing and Encryption (COSE) - Sign message type.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseSign = 98,
+    /// application/cose-key
+    ///
+    /// COSE Key representation.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseKey = 101,
+    /// application/cose-key-set
+    ///
+    /// COSE Key Set representation.
+    ///
+    /// Source: [RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)
+    ApplicationCoseKeySet = 102,
+    /// application/senml+json
+    ///
+    /// Sensor Measurement Lists (SenML) in JSON format.
+    ///
+    /// Source: [RFC 8428](https://datatracker.ietf.org/doc/html/rfc8428)
+    ApplicationSenmlJson = 110,
+    /// application/sensml+json
+    ///
+    /// Sensor Streaming Measurement Lists (SenSML) in JSON format.
+    ///
+    /// Source: [RFC 8428](https://datatracker.ietf.org/doc/html/rfc8428)
+    ApplicationSensmlJson = 111,
+    /// application/senml+cbor
+    ///
+    /// Sensor Measurement Lists (SenML) in CBOR format.
+    ///
+    /// Source: [RFC 8428](https://datatracker.ietf.org/doc/html/rfc8428)
+    ApplicationSenmlCbor = 112,
+    /// application/sensml+cbor
+    ///
+    /// Sensor Streaming Measurement Lists (SenSML) in CBOR format.
+    ///
+    /// Source: [RFC 8428](https://datatracker.ietf.org/doc/html/rfc8428)
+    ApplicationSensmlCbor = 113,
+    /// application/senml-exi
+    ///
+    /// Sensor Measurement Lists (SenML) in EXI format.
+    ///
+    /// Source: [RFC 8428](https://datatracker.ietf.org/doc/html/rfc8428)
+    ApplicationSenmlExi = 114,
+    /// application/sensml-exi
+    ///
+    /// Sensor Streaming Measurement Lists (SenSML) in EXI format.
+    ///
+    /// Source: [RFC 8428](https://datatracker.ietf.org/doc/html/rfc8428)
+    ApplicationSensmlExi = 115,
+    /// application/yang-data+cbor; id=sid
+    ///
+    /// YANG data with Schema Item iDentifier (SID) in CBOR format.
+    ///
+    /// Source: [RFC 9254](https://datatracker.ietf.org/doc/html/rfc9254)
+    ApplicationYangDataCborSid = 140,
 
     /// An unrecognized content format. CoAP allows for content formats beyond those
     /// defined in the base specification.
