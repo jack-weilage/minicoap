@@ -6,6 +6,7 @@
 //!
 //! - [RFC 7252](https://datatracker.ietf.org/doc/html/rfc7252): The Constrained Application Protocol (CoAP)
 //! - [RFC 7959](https://datatracker.ietf.org/doc/html/rfc7959): Block-Wise Transfers in CoAP
+//! - [RFC 7967](https://datatracker.ietf.org/doc/html/rfc7967): Constrained Application Protocol (CoAP) Option for No Server Response
 //! - [RFC 8132](https://datatracker.ietf.org/doc/html/rfc8132): PATCH and FETCH Methods for CoAP
 //! - [RFC 9175](https://datatracker.ietf.org/doc/html/rfc9175): CoAP: Echo, Request-Tag, and Token Processing
 
@@ -628,6 +629,17 @@ pub enum OptionNumber {
     ///
     /// Source: [RFC 9175 2.2](https://datatracker.ietf.org/doc/html/rfc9175#section-2.2)
     Echo = 252,
+    /// The No-Response Option enables clients to explicitly express their disinterest in receiving
+    /// responses from the server. This option uses a bitmap to indicate disinterest in all or
+    /// specific classes of responses: 0 (empty, interested in all), 2 (suppress 2.xx success),
+    /// 8 (suppress 4.xx client errors), 16 (suppress 5.xx server errors). Values can be combined
+    /// using bitwise OR (e.g., 26 suppresses all response classes).
+    ///
+    /// The option value is a uint with 0-1 bytes. This is an elective option that is unsafe to
+    /// forward, part of the cache key, and not repeatable.
+    ///
+    /// Source: [RFC 7967](https://datatracker.ietf.org/doc/html/rfc7967)
+    NoResponse = 258,
     /// The Request-Tag Option allows a CoAP server to match block-wise message fragments belonging
     /// to the same request. It provides a short-lived identifier set by the client to distinguish
     /// concurrent block-wise request operations on a single resource.

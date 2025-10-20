@@ -15,6 +15,7 @@ A tiny, `no_std`, zero-copy Rust library for parsing and building CoAP (Constrai
 
 - [RFC 7252](https://datatracker.ietf.org/doc/html/rfc7252): The Constrained Application Protocol (CoAP)
 - [RFC 7959](https://datatracker.ietf.org/doc/html/rfc7959): Block-Wise Transfers in the Constrained Application Protocol (CoAP)
+- [RFC 7967](https://datatracker.ietf.org/doc/html/rfc7967): Constrained Application Protocol (CoAP) Option for No Server Response
 - [RFC 8132](https://datatracker.ietf.org/doc/html/rfc8132): PATCH and FETCH Methods for the Constrained Application Protocol (CoAP)
 - [RFC 9175](https://datatracker.ietf.org/doc/html/rfc9175): CoAP: Echo, Request-Tag, and Token Processing
 
