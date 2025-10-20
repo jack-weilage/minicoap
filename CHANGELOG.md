@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/jack-weilage/minicoap/compare/v0.1.0...v0.2.0) - 2025-10-20
+
+### Added
+
+- Update IANA Expert Review CoAP Content-Formats
+- Support RFC7967
+- Support RFC9175
+
 ## [0.1.0](https://github.com/jack-weilage/minicoap/releases/tag/v0.1.0) - 2025-10-14
 
 ### Added
