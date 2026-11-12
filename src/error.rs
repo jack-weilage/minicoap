@@ -44,7 +44,10 @@ pub enum CoapParseError {
     /// The token length field (TKL) contains an invalid value.
     /// Token length must be between 0 and 8 bytes. Contains the actual length that was found.
     InvalidTokenLength(usize),
-    /// An option has a delta value of 15, which is reserved and invalid per RFC 7252.
+    /// An option delta is invalid per RFC 7252.
+    ///
+    /// The delta nibble is the reserved value 15, or applying the delta would make the
+    /// option number overflow the 16-bit option number space.
     InvalidOptionDelta,
     /// An option has a length value of 15, which is reserved and invalid per RFC 7252.
     InvalidOptionLength,
@@ -62,7 +65,7 @@ impl core::fmt::Display for CoapParseError {
             CoapParseError::InvalidTokenLength(len) => {
                 write!(f, "Invalid token length (expected 0-8, got {})", len)
             }
-            CoapParseError::InvalidOptionDelta => write!(f, "Invalid option delta (15)"),
+            CoapParseError::InvalidOptionDelta => write!(f, "Invalid option delta"),
             CoapParseError::InvalidOptionLength => write!(f, "Invalid option length (15)"),
             CoapParseError::EmptyMessageWithData => {
                 write!(f, "Empty message (code 0.00) contains data after header")
