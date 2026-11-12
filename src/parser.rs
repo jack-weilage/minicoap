@@ -123,7 +123,9 @@ impl<'a> Message<'a> {
         }
 
         let options = CoapOptions {
-            data: &buffer[options_start..options_end],
+            data: buffer
+                .get(options_start..options_end)
+                .ok_or(CoapParseError::MessageTooShort)?,
         };
 
         let payload = payload_start
