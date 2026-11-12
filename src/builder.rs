@@ -19,6 +19,20 @@ fn uint_to_minimal_bytes(value: u64) -> ([u8; 8], usize) {
     (bytes, leading_zeros)
 }
 
+/// Copy `src` into `buf` at `offset`. Returns the offset just past the written bytes.
+fn write_bytes(buf: &mut [u8], offset: usize, src: &[u8]) -> Result<usize, CoapBuildError> {
+    let end = offset
+        .checked_add(src.len())
+        .ok_or(CoapBuildError::BufferTooSmall)?;
+    let Some(dest) = buf.get_mut(offset..end) else {
+        return Err(CoapBuildError::BufferTooSmall);
+    };
+    for (slot, byte) in dest.iter_mut().zip(src) {
+        *slot = *byte;
+    }
+    Ok(end)
+}
+
 /// State for receiving the buffer.
 pub struct NeedsBuffer;
 /// State for constructing the header.
@@ -250,17 +264,8 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
             return Err(CoapBuildError::PayloadMarkerWithoutPayload);
         }
 
-        if self.offset + 1 + payload.len() > self.buffer.len() {
-            return Err(CoapBuildError::BufferTooSmall);
-        }
-
-        // Write payload marker
-        self.buffer[self.offset] = 0xFF;
-        self.offset += 1;
-
-        // Write payload
-        self.buffer[self.offset..self.offset + payload.len()].copy_from_slice(payload);
-        self.offset += payload.len();
+        let cursor = write_bytes(self.buffer, self.offset, &[0xFF])?;
+        self.offset = write_bytes(self.buffer, cursor, payload)?;
 
         Ok(MessageBuilder {
             buffer: self.buffer,
@@ -479,6 +484,22 @@ mod test {
             assert_eq!(opt.as_uint(), Some(value), "Failed for value {}", value);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn payload_that_fills_buffer_does_not_panic() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 6];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Post)
+            .message_id(0x10)
+            .no_token()?
+            .payload(b"Z")?
+            .build();
+
+        assert_eq!(packet.len(), 6);
+        assert_eq!(packet[5], b'Z');
         Ok(())
     }
 }
