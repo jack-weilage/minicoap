@@ -19,6 +19,58 @@ fn uint_to_minimal_bytes(value: u64) -> ([u8; 8], usize) {
     (bytes, leading_zeros)
 }
 
+/// Extra bytes that follow an option's header nibble. No indexing: each variant has a fixed size.
+enum ExtBytes {
+    None,
+    One(u8),
+    Two([u8; 2]),
+}
+
+fn encode_delta(delta: u16) -> (u8, ExtBytes) {
+    match delta {
+        0..=12 => (delta as u8, ExtBytes::None),
+        13..=268 => (13, ExtBytes::One((delta - 13) as u8)),
+        // `delta` is a `u16`, so `delta - 269` always fits in the 16-bit extension.
+        _ => (14, ExtBytes::Two((delta - 269).to_be_bytes())),
+    }
+}
+
+fn encode_length(len: usize) -> Result<(u8, ExtBytes), CoapBuildError> {
+    match len {
+        0..=12 => Ok((len as u8, ExtBytes::None)),
+        13..=268 => Ok((13, ExtBytes::One((len - 13) as u8))),
+        // Lengths above 268 are `u16 + 269`. Anything larger cannot be encoded.
+        269.. => {
+            let Some(ext) = u16::try_from(len - 269).ok() else {
+                return Err(CoapBuildError::OptionValueTooLong(len));
+            };
+            Ok((14, ExtBytes::Two(ext.to_be_bytes())))
+        }
+    }
+}
+
+/// Copy `src` into `buf` at `offset`. Returns the offset just past the written bytes.
+fn write_bytes(buf: &mut [u8], offset: usize, src: &[u8]) -> Result<usize, CoapBuildError> {
+    let end = offset
+        .checked_add(src.len())
+        .ok_or(CoapBuildError::BufferTooSmall)?;
+    let Some(dest) = buf.get_mut(offset..end) else {
+        return Err(CoapBuildError::BufferTooSmall);
+    };
+    for (slot, byte) in dest.iter_mut().zip(src) {
+        *slot = *byte;
+    }
+    Ok(end)
+}
+
+fn write_ext(buf: &mut [u8], offset: usize, ext: &ExtBytes) -> Result<usize, CoapBuildError> {
+    match ext {
+        ExtBytes::None => Ok(offset),
+        ExtBytes::One(byte) => write_bytes(buf, offset, &[*byte]),
+        ExtBytes::Two(bytes) => write_bytes(buf, offset, bytes),
+    }
+}
+
 /// State for receiving the buffer.
 pub struct NeedsBuffer;
 /// State for constructing the header.
@@ -35,6 +87,10 @@ pub struct Complete;
 /// Builder for CoAP messages.
 pub struct MessageBuilder<'buf, State> {
     buffer: &'buf mut [u8],
+    /// Header bytes: version/type/token length, code, and message ID. Kept here so
+    /// the fixed-size writes need no runtime index. Copied into `buffer` by `token`
+    /// or `no_token`, before any option or payload is written.
+    head: [u8; 4],
     offset: usize,
     last_option_number: u16,
     _state: PhantomData<State>,
@@ -56,6 +112,7 @@ impl<'buf> MessageBuilder<'buf, NeedsBuffer> {
 
         Ok(MessageBuilder {
             buffer,
+            head: [0; 4],
             offset: 0,
             last_option_number: 0,
             _state: PhantomData,
@@ -71,13 +128,14 @@ impl<'buf> MessageBuilder<'buf, NeedsHeader> {
         code: impl Into<u8>,
     ) -> MessageBuilder<'buf, NeedsMessageId> {
         // ver 0..2 | msg_type 2..4 | token_len 4..8 (set later)
-        self.buffer[0] = (u8::from(Version::V1) << 6) | (u8::from(msg_type)) << 4;
-        self.buffer[1] = code.into();
+        self.head[0] = (u8::from(Version::V1) << 6) | (u8::from(msg_type)) << 4;
+        self.head[1] = code.into();
 
         self.offset = 2;
 
         MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -116,11 +174,14 @@ impl<'buf> MessageBuilder<'buf, NeedsHeader> {
 impl<'buf> MessageBuilder<'buf, NeedsMessageId> {
     /// Set the message ID for the packet.
     pub fn message_id(mut self, id: u16) -> MessageBuilder<'buf, NeedsToken> {
-        self.buffer[self.offset..self.offset + 2].copy_from_slice(&id.to_be_bytes());
+        let [hi, lo] = id.to_be_bytes();
+        self.head[2] = hi;
+        self.head[3] = lo;
         self.offset += 2;
 
         MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -136,18 +197,15 @@ impl<'buf> MessageBuilder<'buf, NeedsToken> {
             return Err(CoapBuildError::TokenTooLong(token_len));
         }
 
-        if self.offset + token_len > self.buffer.len() {
-            return Err(CoapBuildError::BufferTooSmall);
-        }
-
         // Update TKL in header.
-        self.buffer[0] |= token_len as u8 & 0x0F;
+        self.head[0] |= token_len as u8 & 0x0F;
 
-        self.buffer[self.offset..self.offset + token_len].copy_from_slice(token);
-        self.offset += token_len;
+        self.offset = write_bytes(self.buffer, self.offset, token)?;
+        write_bytes(self.buffer, 0, &self.head)?;
 
         Ok(MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -156,10 +214,12 @@ impl<'buf> MessageBuilder<'buf, NeedsToken> {
 
     /// Skip adding a token (uses a zero-length token)
     pub fn no_token(self) -> BuilderResult<'buf, NeedsPayload> {
-        // TKL is already set to 0, just transition state.
+        // TKL is already set to 0. Write the header bytes into the buffer.
+        write_bytes(self.buffer, 0, &self.head)?;
 
         Ok(MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -181,41 +241,15 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
         }
 
         let delta = option_number - self.last_option_number;
+        let (delta_field, delta_ext) = encode_delta(delta);
+        let (length_field, length_ext) = encode_length(value.len())?;
 
-        let (delta_field, delta_ext) = match delta {
-            0..=12 => (delta as u8, &[][..]),
-            13..=268 => (13, &((delta - 13) as u8).to_be_bytes()[..]),
-            269.. => (14, &(delta - 269).to_be_bytes()[..]),
-        };
-
-        let (length_field, length_ext) = match value.len() {
-            0..=12 => (value.len() as u8, &[][..]),
-            13..=268 => (13, &((value.len() - 13) as u8).to_be_bytes()[..]),
-            269.. => (14, &(value.len() - 269).to_be_bytes()[..]),
-        };
-
-        let option_header_len = 1 + delta_ext.len() + length_ext.len();
-        let option_len = option_header_len + value.len();
-
-        if self.offset + option_len > self.buffer.len() {
-            return Err(CoapBuildError::BufferTooSmall);
-        }
-
-        // Write the header byte
-        self.buffer[self.offset] = (delta_field << 4) | length_field;
-        self.offset += 1;
-
-        // Write the delta extension. If it's empty, nothing will be written.
-        self.buffer[self.offset..self.offset + delta_ext.len()].copy_from_slice(delta_ext);
-        self.offset += delta_ext.len();
-
-        // Write the length extension. If it's empty, nothing will be written.
-        self.buffer[self.offset..self.offset + length_ext.len()].copy_from_slice(length_ext);
-        self.offset += length_ext.len();
-
-        // Write the value
-        self.buffer[self.offset..self.offset + value.len()].copy_from_slice(value);
-        self.offset += value.len();
+        // Fallible writes: a short buffer is `BufferTooSmall`, never an index panic.
+        let header = [(delta_field << 4) | length_field];
+        let mut cursor = write_bytes(self.buffer, self.offset, &header)?;
+        cursor = write_ext(self.buffer, cursor, &delta_ext)?;
+        cursor = write_ext(self.buffer, cursor, &length_ext)?;
+        self.offset = write_bytes(self.buffer, cursor, value)?;
 
         self.last_option_number = option_number;
 
@@ -241,7 +275,8 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
     ) -> BuilderResult<'buf, NeedsPayload> {
         let value = value.into();
         let (bytes, start) = uint_to_minimal_bytes(value);
-        self.option(option_number, &bytes[start..])
+        // `start` is at most 8. Index through `get` so the slice needs no bounds check.
+        self.option(option_number, bytes.get(start..).unwrap_or(&[]))
     }
 
     /// Add a payload to the packet.
@@ -250,20 +285,12 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
             return Err(CoapBuildError::PayloadMarkerWithoutPayload);
         }
 
-        if self.offset + 1 + payload.len() > self.buffer.len() {
-            return Err(CoapBuildError::BufferTooSmall);
-        }
-
-        // Write payload marker
-        self.buffer[self.offset] = 0xFF;
-        self.offset += 1;
-
-        // Write payload
-        self.buffer[self.offset..self.offset + payload.len()].copy_from_slice(payload);
-        self.offset += payload.len();
+        let cursor = write_bytes(self.buffer, self.offset, &[0xFF])?;
+        self.offset = write_bytes(self.buffer, cursor, payload)?;
 
         Ok(MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -274,6 +301,7 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
     pub fn no_payload(self) -> MessageBuilder<'buf, Complete> {
         MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -284,7 +312,7 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
 impl<'buf> MessageBuilder<'buf, Complete> {
     /// Build the packet.
     pub fn build(self) -> &'buf [u8] {
-        &self.buffer[..self.offset]
+        self.buffer.get(..self.offset).unwrap_or(&[])
     }
 
     /// Returns the length of the packet.
@@ -348,6 +376,22 @@ mod test {
         // Test a large u64 value
         let (bytes, start) = uint_to_minimal_bytes(0x0102030405060708);
         assert_eq!(&bytes[start..], &[1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_token_header_bytes() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 128];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Get)
+            .message_id(0x1234)
+            .token(&[1, 2, 3, 4])?
+            .no_payload()
+            .build();
+
+        // TKL = 4 in the low nibble of byte 0; message ID and token follow the code.
+        assert_eq!(packet, &[0x44, 0x01, 0x12, 0x34, 1, 2, 3, 4]);
+        Ok(())
     }
 
     #[test]
@@ -479,6 +523,93 @@ mod test {
             assert_eq!(opt.as_uint(), Some(value), "Failed for value {}", value);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn payload_that_fills_buffer_does_not_panic() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 6];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Post)
+            .message_id(0x10)
+            .no_token()?
+            .payload(b"Z")?
+            .build();
+
+        assert_eq!(packet.len(), 6);
+        assert_eq!(packet[5], b'Z');
+        Ok(())
+    }
+
+    #[test]
+    fn option_that_fills_buffer_does_not_panic() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 6];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Get)
+            .message_id(0x10)
+            .no_token()?
+            .option(OptionNumber::UriPath, b"a")?
+            .no_payload()
+            .build();
+
+        assert_eq!(packet.len(), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn option_one_byte_past_buffer_is_an_error() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 5];
+
+        let result = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Get)
+            .message_id(0x10)
+            .no_token()?
+            .option(OptionNumber::UriPath, b"a");
+
+        assert!(matches!(result, Err(CoapBuildError::BufferTooSmall)));
+        Ok(())
+    }
+
+    #[test]
+    fn extended_option_length_roundtrip() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 512];
+        let value = [0xABu8; 300];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Put)
+            .message_id(0x22)
+            .no_token()?
+            .option(OptionNumber::UriPath, &value)?
+            .no_payload()
+            .build();
+
+        use crate::parser::Message;
+        let msg = Message::parse(packet).unwrap();
+        let opt = msg.options.into_iter().next().unwrap();
+        assert_eq!(opt.value, &value);
+        Ok(())
+    }
+
+    #[test]
+    fn option_value_above_spec_limit_is_an_error() -> Result<(), CoapBuildError> {
+        extern crate alloc;
+        use alloc::vec;
+
+        let mut tx_buf = [0u8; 32];
+        let value = vec![0u8; 269 + usize::from(u16::MAX) + 1];
+
+        let result = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Put)
+            .message_id(1)
+            .no_token()?
+            .option(OptionNumber::UriPath, &value);
+
+        assert!(matches!(
+            result,
+            Err(CoapBuildError::OptionValueTooLong(65805))
+        ));
         Ok(())
     }
 }

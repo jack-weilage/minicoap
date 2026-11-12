@@ -12,6 +12,11 @@ pub enum CoapBuildError {
     /// Options must be added in ascending order by option number.
     /// An attempt was made to add an option with a number less than or equal to the previous option.
     OptionNumberOutOfOrder,
+    /// The option value is longer than CoAP can encode (65804 bytes).
+    ///
+    /// RFC 7252 represents lengths above 268 as a 16-bit unsigned integer plus 269,
+    /// so the maximum encodable length is `269 + u16::MAX`.
+    OptionValueTooLong(usize),
 }
 
 impl core::fmt::Display for CoapBuildError {
@@ -25,6 +30,9 @@ impl core::fmt::Display for CoapBuildError {
                 write!(f, "Payload marker without payload")
             }
             CoapBuildError::OptionNumberOutOfOrder => write!(f, "Option number out of order"),
+            CoapBuildError::OptionValueTooLong(len) => {
+                write!(f, "Option value too long (max 65804, got {len})")
+            }
         }
     }
 }
@@ -44,7 +52,10 @@ pub enum CoapParseError {
     /// The token length field (TKL) contains an invalid value.
     /// Token length must be between 0 and 8 bytes. Contains the actual length that was found.
     InvalidTokenLength(usize),
-    /// An option has a delta value of 15, which is reserved and invalid per RFC 7252.
+    /// An option delta is invalid per RFC 7252.
+    ///
+    /// The delta nibble is the reserved value 15, or applying the delta would make the
+    /// option number overflow the 16-bit option number space.
     InvalidOptionDelta,
     /// An option has a length value of 15, which is reserved and invalid per RFC 7252.
     InvalidOptionLength,
@@ -62,7 +73,7 @@ impl core::fmt::Display for CoapParseError {
             CoapParseError::InvalidTokenLength(len) => {
                 write!(f, "Invalid token length (expected 0-8, got {})", len)
             }
-            CoapParseError::InvalidOptionDelta => write!(f, "Invalid option delta (15)"),
+            CoapParseError::InvalidOptionDelta => write!(f, "Invalid option delta"),
             CoapParseError::InvalidOptionLength => write!(f, "Invalid option length (15)"),
             CoapParseError::EmptyMessageWithData => {
                 write!(f, "Empty message (code 0.00) contains data after header")
