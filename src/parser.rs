@@ -37,12 +37,12 @@ impl<'a> Message<'a> {
         };
 
         let message_type_raw = (buffer[0] >> 4) & 0b11;
+        // The type field is two bits, so the only remaining value is Reset (3).
         let message_type = match message_type_raw {
             0 => MessageType::Confirmable,
             1 => MessageType::NonConfirmable,
             2 => MessageType::Acknowledgement,
-            3 => MessageType::Reset,
-            _ => unreachable!(),
+            _ => MessageType::Reset,
         };
 
         let token_len = (buffer[0] & 0x0F) as usize;
