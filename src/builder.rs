@@ -275,7 +275,8 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
     ) -> BuilderResult<'buf, NeedsPayload> {
         let value = value.into();
         let (bytes, start) = uint_to_minimal_bytes(value);
-        self.option(option_number, &bytes[start..])
+        // `start` is at most 8. Index through `get` so the slice needs no bounds check.
+        self.option(option_number, bytes.get(start..).unwrap_or(&[]))
     }
 
     /// Add a payload to the packet.
