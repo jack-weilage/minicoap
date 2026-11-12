@@ -87,6 +87,10 @@ pub struct Complete;
 /// Builder for CoAP messages.
 pub struct MessageBuilder<'buf, State> {
     buffer: &'buf mut [u8],
+    /// Header bytes: version/type/token length, code, and message ID. Kept here so
+    /// the fixed-size writes need no runtime index. Copied into `buffer` by `token`
+    /// or `no_token`, before any option or payload is written.
+    head: [u8; 4],
     offset: usize,
     last_option_number: u16,
     _state: PhantomData<State>,
@@ -108,6 +112,7 @@ impl<'buf> MessageBuilder<'buf, NeedsBuffer> {
 
         Ok(MessageBuilder {
             buffer,
+            head: [0; 4],
             offset: 0,
             last_option_number: 0,
             _state: PhantomData,
@@ -123,13 +128,14 @@ impl<'buf> MessageBuilder<'buf, NeedsHeader> {
         code: impl Into<u8>,
     ) -> MessageBuilder<'buf, NeedsMessageId> {
         // ver 0..2 | msg_type 2..4 | token_len 4..8 (set later)
-        self.buffer[0] = (u8::from(Version::V1) << 6) | (u8::from(msg_type)) << 4;
-        self.buffer[1] = code.into();
+        self.head[0] = (u8::from(Version::V1) << 6) | (u8::from(msg_type)) << 4;
+        self.head[1] = code.into();
 
         self.offset = 2;
 
         MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -168,11 +174,14 @@ impl<'buf> MessageBuilder<'buf, NeedsHeader> {
 impl<'buf> MessageBuilder<'buf, NeedsMessageId> {
     /// Set the message ID for the packet.
     pub fn message_id(mut self, id: u16) -> MessageBuilder<'buf, NeedsToken> {
-        self.buffer[self.offset..self.offset + 2].copy_from_slice(&id.to_be_bytes());
+        let [hi, lo] = id.to_be_bytes();
+        self.head[2] = hi;
+        self.head[3] = lo;
         self.offset += 2;
 
         MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -188,18 +197,15 @@ impl<'buf> MessageBuilder<'buf, NeedsToken> {
             return Err(CoapBuildError::TokenTooLong(token_len));
         }
 
-        if self.offset + token_len > self.buffer.len() {
-            return Err(CoapBuildError::BufferTooSmall);
-        }
-
         // Update TKL in header.
-        self.buffer[0] |= token_len as u8 & 0x0F;
+        self.head[0] |= token_len as u8 & 0x0F;
 
-        self.buffer[self.offset..self.offset + token_len].copy_from_slice(token);
-        self.offset += token_len;
+        self.offset = write_bytes(self.buffer, self.offset, token)?;
+        write_bytes(self.buffer, 0, &self.head)?;
 
         Ok(MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -208,10 +214,12 @@ impl<'buf> MessageBuilder<'buf, NeedsToken> {
 
     /// Skip adding a token (uses a zero-length token)
     pub fn no_token(self) -> BuilderResult<'buf, NeedsPayload> {
-        // TKL is already set to 0, just transition state.
+        // TKL is already set to 0. Write the header bytes into the buffer.
+        write_bytes(self.buffer, 0, &self.head)?;
 
         Ok(MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -281,6 +289,7 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
 
         Ok(MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -291,6 +300,7 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
     pub fn no_payload(self) -> MessageBuilder<'buf, Complete> {
         MessageBuilder {
             buffer: self.buffer,
+            head: self.head,
             offset: self.offset,
             last_option_number: self.last_option_number,
             _state: PhantomData,
@@ -365,6 +375,22 @@ mod test {
         // Test a large u64 value
         let (bytes, start) = uint_to_minimal_bytes(0x0102030405060708);
         assert_eq!(&bytes[start..], &[1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_token_header_bytes() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 128];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Get)
+            .message_id(0x1234)
+            .token(&[1, 2, 3, 4])?
+            .no_payload()
+            .build();
+
+        // TKL = 4 in the low nibble of byte 0; message ID and token follow the code.
+        assert_eq!(packet, &[0x44, 0x01, 0x12, 0x34, 1, 2, 3, 4]);
+        Ok(())
     }
 
     #[test]
