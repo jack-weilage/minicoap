@@ -128,15 +128,12 @@ impl<'a> Message<'a> {
                 .ok_or(CoapParseError::MessageTooShort)?,
         };
 
-        let payload = payload_start
-            .map(|start| {
-                if start >= buffer.len() {
-                    return Err(CoapParseError::PayloadMarkerWithoutPayload);
-                }
-
-                Ok(&buffer[start..])
-            })
-            .transpose()?;
+        let payload = match payload_start {
+            None => None,
+            // `start == buffer.len()` is a payload marker with nothing after it.
+            Some(start) if start < buffer.len() => buffer.get(start..),
+            Some(_) => return Err(CoapParseError::PayloadMarkerWithoutPayload),
+        };
 
         Ok(Message {
             version,
