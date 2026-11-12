@@ -284,7 +284,7 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
 impl<'buf> MessageBuilder<'buf, Complete> {
     /// Build the packet.
     pub fn build(self) -> &'buf [u8] {
-        &self.buffer[..self.offset]
+        self.buffer.get(..self.offset).unwrap_or(&[])
     }
 
     /// Returns the length of the packet.
