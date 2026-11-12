@@ -365,12 +365,9 @@ impl<'a> Iterator for OptionIterator<'a> {
             _ => return None,
         };
 
-        if self.offset + actual_length > self.data.len() {
-            return None;
-        }
-
-        let value = &self.data[self.offset..self.offset + actual_length];
-        self.offset += actual_length;
+        let end = self.offset.checked_add(actual_length)?;
+        let value = self.data.get(self.offset..end)?;
+        self.offset = end;
 
         Some(CoapOption {
             number: OptionNumber::from(self.current_option_number),
