@@ -208,28 +208,12 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
             269.. => (14, &(value.len() - 269).to_be_bytes()[..]),
         };
 
-        let option_header_len = 1 + delta_ext.len() + length_ext.len();
-        let option_len = option_header_len + value.len();
-
-        if self.offset + option_len > self.buffer.len() {
-            return Err(CoapBuildError::BufferTooSmall);
-        }
-
-        // Write the header byte
-        self.buffer[self.offset] = (delta_field << 4) | length_field;
-        self.offset += 1;
-
-        // Write the delta extension. If it's empty, nothing will be written.
-        self.buffer[self.offset..self.offset + delta_ext.len()].copy_from_slice(delta_ext);
-        self.offset += delta_ext.len();
-
-        // Write the length extension. If it's empty, nothing will be written.
-        self.buffer[self.offset..self.offset + length_ext.len()].copy_from_slice(length_ext);
-        self.offset += length_ext.len();
-
-        // Write the value
-        self.buffer[self.offset..self.offset + value.len()].copy_from_slice(value);
-        self.offset += value.len();
+        // Fallible writes: a short buffer is BufferTooSmall, never an index panic.
+        let header = [(delta_field << 4) | length_field];
+        let mut cursor = write_bytes(self.buffer, self.offset, &header)?;
+        cursor = write_bytes(self.buffer, cursor, delta_ext)?;
+        cursor = write_bytes(self.buffer, cursor, length_ext)?;
+        self.offset = write_bytes(self.buffer, cursor, value)?;
 
         self.last_option_number = option_number;
 
@@ -500,6 +484,36 @@ mod test {
 
         assert_eq!(packet.len(), 6);
         assert_eq!(packet[5], b'Z');
+        Ok(())
+    }
+
+    #[test]
+    fn option_that_fills_buffer_does_not_panic() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 6];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Get)
+            .message_id(0x10)
+            .no_token()?
+            .option(OptionNumber::UriPath, b"a")?
+            .no_payload()
+            .build();
+
+        assert_eq!(packet.len(), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn option_one_byte_past_buffer_is_an_error() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 5];
+
+        let result = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Get)
+            .message_id(0x10)
+            .no_token()?
+            .option(OptionNumber::UriPath, b"a");
+
+        assert!(matches!(result, Err(CoapBuildError::BufferTooSmall)));
         Ok(())
     }
 }
