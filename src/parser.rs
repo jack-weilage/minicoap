@@ -362,8 +362,8 @@ impl<'a> Iterator for OptionIterator<'a> {
                 self.offset += 2;
                 ext + 269
             }
-            15 => return None,
-            _ => unreachable!(),
+            // 15 is reserved. Every other value is excluded by the 4-bit mask.
+            _ => return None,
         };
 
         if self.offset + actual_length > self.data.len() {
