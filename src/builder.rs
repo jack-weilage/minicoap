@@ -19,6 +19,36 @@ fn uint_to_minimal_bytes(value: u64) -> ([u8; 8], usize) {
     (bytes, leading_zeros)
 }
 
+/// Extra bytes that follow an option's header nibble. No indexing: each variant has a fixed size.
+enum ExtBytes {
+    None,
+    One(u8),
+    Two([u8; 2]),
+}
+
+fn encode_delta(delta: u16) -> (u8, ExtBytes) {
+    match delta {
+        0..=12 => (delta as u8, ExtBytes::None),
+        13..=268 => (13, ExtBytes::One((delta - 13) as u8)),
+        // `delta` is a `u16`, so `delta - 269` always fits in the 16-bit extension.
+        _ => (14, ExtBytes::Two((delta - 269).to_be_bytes())),
+    }
+}
+
+fn encode_length(len: usize) -> Result<(u8, ExtBytes), CoapBuildError> {
+    match len {
+        0..=12 => Ok((len as u8, ExtBytes::None)),
+        13..=268 => Ok((13, ExtBytes::One((len - 13) as u8))),
+        // Lengths above 268 are `u16 + 269`. Anything larger cannot be encoded.
+        269.. => {
+            let Some(ext) = u16::try_from(len - 269).ok() else {
+                return Err(CoapBuildError::OptionValueTooLong(len));
+            };
+            Ok((14, ExtBytes::Two(ext.to_be_bytes())))
+        }
+    }
+}
+
 /// Copy `src` into `buf` at `offset`. Returns the offset just past the written bytes.
 fn write_bytes(buf: &mut [u8], offset: usize, src: &[u8]) -> Result<usize, CoapBuildError> {
     let end = offset
@@ -31,6 +61,14 @@ fn write_bytes(buf: &mut [u8], offset: usize, src: &[u8]) -> Result<usize, CoapB
         *slot = *byte;
     }
     Ok(end)
+}
+
+fn write_ext(buf: &mut [u8], offset: usize, ext: &ExtBytes) -> Result<usize, CoapBuildError> {
+    match ext {
+        ExtBytes::None => Ok(offset),
+        ExtBytes::One(byte) => write_bytes(buf, offset, &[*byte]),
+        ExtBytes::Two(bytes) => write_bytes(buf, offset, bytes),
+    }
 }
 
 /// State for receiving the buffer.
@@ -195,24 +233,14 @@ impl<'buf> MessageBuilder<'buf, NeedsPayload> {
         }
 
         let delta = option_number - self.last_option_number;
+        let (delta_field, delta_ext) = encode_delta(delta);
+        let (length_field, length_ext) = encode_length(value.len())?;
 
-        let (delta_field, delta_ext) = match delta {
-            0..=12 => (delta as u8, &[][..]),
-            13..=268 => (13, &((delta - 13) as u8).to_be_bytes()[..]),
-            269.. => (14, &(delta - 269).to_be_bytes()[..]),
-        };
-
-        let (length_field, length_ext) = match value.len() {
-            0..=12 => (value.len() as u8, &[][..]),
-            13..=268 => (13, &((value.len() - 13) as u8).to_be_bytes()[..]),
-            269.. => (14, &(value.len() - 269).to_be_bytes()[..]),
-        };
-
-        // Fallible writes: a short buffer is BufferTooSmall, never an index panic.
+        // Fallible writes: a short buffer is `BufferTooSmall`, never an index panic.
         let header = [(delta_field << 4) | length_field];
         let mut cursor = write_bytes(self.buffer, self.offset, &header)?;
-        cursor = write_bytes(self.buffer, cursor, delta_ext)?;
-        cursor = write_bytes(self.buffer, cursor, length_ext)?;
+        cursor = write_ext(self.buffer, cursor, &delta_ext)?;
+        cursor = write_ext(self.buffer, cursor, &length_ext)?;
         self.offset = write_bytes(self.buffer, cursor, value)?;
 
         self.last_option_number = option_number;
@@ -514,6 +542,47 @@ mod test {
             .option(OptionNumber::UriPath, b"a");
 
         assert!(matches!(result, Err(CoapBuildError::BufferTooSmall)));
+        Ok(())
+    }
+
+    #[test]
+    fn extended_option_length_roundtrip() -> Result<(), CoapBuildError> {
+        let mut tx_buf = [0; 512];
+        let value = [0xABu8; 300];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Put)
+            .message_id(0x22)
+            .no_token()?
+            .option(OptionNumber::UriPath, &value)?
+            .no_payload()
+            .build();
+
+        use crate::parser::Message;
+        let msg = Message::parse(packet).unwrap();
+        let opt = msg.options.into_iter().next().unwrap();
+        assert_eq!(opt.value, &value);
+        Ok(())
+    }
+
+    #[test]
+    fn option_value_above_spec_limit_is_an_error() -> Result<(), CoapBuildError> {
+        extern crate alloc;
+        use alloc::vec;
+
+        let mut tx_buf = [0u8; 32];
+        let value = vec![0u8; 269 + usize::from(u16::MAX) + 1];
+
+        let result = MessageBuilder::new(&mut tx_buf)?
+            .request(MessageType::Confirmable, RequestCode::Put)
+            .message_id(1)
+            .no_token()?
+            .option(OptionNumber::UriPath, &value);
+
+        assert!(matches!(
+            result,
+            Err(CoapBuildError::OptionValueTooLong(65805))
+        ));
         Ok(())
     }
 }

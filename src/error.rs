@@ -12,6 +12,11 @@ pub enum CoapBuildError {
     /// Options must be added in ascending order by option number.
     /// An attempt was made to add an option with a number less than or equal to the previous option.
     OptionNumberOutOfOrder,
+    /// The option value is longer than CoAP can encode (65804 bytes).
+    ///
+    /// RFC 7252 represents lengths above 268 as a 16-bit unsigned integer plus 269,
+    /// so the maximum encodable length is `269 + u16::MAX`.
+    OptionValueTooLong(usize),
 }
 
 impl core::fmt::Display for CoapBuildError {
@@ -25,6 +30,9 @@ impl core::fmt::Display for CoapBuildError {
                 write!(f, "Payload marker without payload")
             }
             CoapBuildError::OptionNumberOutOfOrder => write!(f, "Option number out of order"),
+            CoapBuildError::OptionValueTooLong(len) => {
+                write!(f, "Option value too long (max 65804, got {len})")
+            }
         }
     }
 }
