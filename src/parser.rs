@@ -665,9 +665,6 @@ mod tests {
             .unwrap()
             .empty(MessageType::Acknowledgement)
             .message_id(0xFFFF)
-            .no_token()
-            .unwrap()
-            .no_payload()
             .build();
 
         let message = Message::parse(packet).unwrap();

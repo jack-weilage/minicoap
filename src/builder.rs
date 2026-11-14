@@ -77,6 +77,8 @@ pub struct NeedsBuffer;
 pub struct NeedsHeader;
 /// State for adding the message ID.
 pub struct NeedsMessageId;
+/// State for adding the message ID to an Empty message, which completes it.
+pub struct NeedsEmptyMessageId;
 /// State for adding the token and setting the token length.
 pub struct NeedsToken;
 /// State for adding options and/or payload.
@@ -122,6 +124,10 @@ impl<'buf> MessageBuilder<'buf, NeedsBuffer> {
 
 impl<'buf> MessageBuilder<'buf, NeedsHeader> {
     /// Construct a header for a CoAP packet.
+    ///
+    /// For an Empty message (code 0.00) use [`empty`](Self::empty) or [`ping`](Self::ping).
+    /// An Empty message must not carry a token, options or a payload, and this method cannot
+    /// check that for a raw code.
     pub fn header(
         mut self,
         msg_type: MessageType,
@@ -160,14 +166,72 @@ impl<'buf> MessageBuilder<'buf, NeedsHeader> {
         self.header(msg_type, code)
     }
 
-    /// Convenience method for constructing an empty packet.
-    pub fn empty(self, msg_type: MessageType) -> MessageBuilder<'buf, NeedsMessageId> {
-        self.header(msg_type, coap_code!(0, 00))
+    /// Construct an Empty message (code 0.00).
+    ///
+    /// An Empty message is the 4-byte header and nothing else (RFC 7252 section 4.1), so the
+    /// only step left is the message ID:
+    ///
+    /// ```
+    /// use minicoap::{MessageBuilder, MessageType};
+    ///
+    /// let mut buffer = [0u8; 16];
+    /// let packet = MessageBuilder::new(&mut buffer)
+    ///     .unwrap()
+    ///     .empty(MessageType::Acknowledgement)
+    ///     .message_id(0x1234)
+    ///     .build();
+    /// assert_eq!(packet, &[0x60, 0x00, 0x12, 0x34]);
+    /// ```
+    ///
+    /// A token, options or a payload cannot be added:
+    ///
+    /// ```compile_fail
+    /// use minicoap::{MessageBuilder, MessageType};
+    ///
+    /// let mut buffer = [0u8; 16];
+    /// MessageBuilder::new(&mut buffer)
+    ///     .unwrap()
+    ///     .empty(MessageType::Acknowledgement)
+    ///     .message_id(0x1234)
+    ///     .no_token();
+    /// ```
+    pub fn empty(self, msg_type: MessageType) -> MessageBuilder<'buf, NeedsEmptyMessageId> {
+        let builder = self.header(msg_type, coap_code!(0, 00));
+
+        MessageBuilder {
+            buffer: builder.buffer,
+            head: builder.head,
+            offset: builder.offset,
+            last_option_number: builder.last_option_number,
+            _state: PhantomData,
+        }
     }
 
-    /// Convenience method for constructing a ping request.
-    pub fn ping(self) -> MessageBuilder<'buf, NeedsMessageId> {
-        self.header(MessageType::Confirmable, coap_code!(0, 00))
+    /// Construct a ping: an Empty Confirmable message, which the peer answers with a Reset.
+    pub fn ping(self) -> MessageBuilder<'buf, NeedsEmptyMessageId> {
+        self.empty(MessageType::Confirmable)
+    }
+}
+
+impl<'buf> MessageBuilder<'buf, NeedsEmptyMessageId> {
+    /// Set the message ID. This completes an Empty message.
+    pub fn message_id(mut self, id: u16) -> MessageBuilder<'buf, Complete> {
+        let [hi, lo] = id.to_be_bytes();
+        self.head[2] = hi;
+        self.head[3] = lo;
+
+        // `new` checked that the buffer holds the 4-byte header.
+        if let Some(header) = self.buffer.first_chunk_mut() {
+            *header = self.head;
+        }
+
+        MessageBuilder {
+            buffer: self.buffer,
+            head: self.head,
+            offset: 4,
+            last_option_number: self.last_option_number,
+            _state: PhantomData,
+        }
     }
 }
 
@@ -343,6 +407,36 @@ mod test {
 
         assert_eq!(packet.len(), 4);
         assert_eq!(packet, &[0x40, 0x01, 0x00, 0x00]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_message_is_header_only() -> Result<(), CoapBuildError> {
+        // Start from a dirty buffer: only the 4 header bytes may be written.
+        let mut tx_buf = [0xAA; 8];
+
+        let builder = MessageBuilder::new(&mut tx_buf)?
+            .empty(MessageType::Reset)
+            .message_id(0x1234);
+        assert_eq!(builder.len(), 4);
+        assert_eq!(builder.remaining_buffer(), 4);
+        assert_eq!(builder.build(), &[0x70, 0x00, 0x12, 0x34]);
+        assert_eq!(&tx_buf[4..], &[0xAA; 4]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ping() -> Result<(), CoapBuildError> {
+        // The smallest buffer `new` accepts is exactly an Empty message.
+        let mut tx_buf = [0; 4];
+
+        let packet = MessageBuilder::new(&mut tx_buf)?
+            .ping()
+            .message_id(0xBEEF)
+            .build();
+        assert_eq!(packet, &[0x40, 0x00, 0xBE, 0xEF]);
 
         Ok(())
     }
