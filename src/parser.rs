@@ -59,6 +59,12 @@ impl<'a> Message<'a> {
 
         let code = buffer[1];
 
+        // An Empty message is the 4-byte header and nothing else: no token, options or payload
+        // (RFC 7252 section 4.1).
+        if code == 0 && (token_len != 0 || buffer.len() > 4) {
+            return Err(CoapParseError::EmptyMessageWithData);
+        }
+
         let message_id = u16::from_be_bytes([buffer[2], buffer[3]]);
 
         if buffer.len() < 4 + token_len {
@@ -68,10 +74,6 @@ impl<'a> Message<'a> {
         let token = &buffer[4..4 + token_len];
 
         let mut offset = 4 + token_len;
-
-        if code == 0 && buffer.len() > offset {
-            return Err(CoapParseError::EmptyMessageWithData);
-        }
 
         let options_start = offset;
         let mut options_end = offset;
@@ -676,6 +678,23 @@ mod tests {
         assert!(message.is_empty());
         assert!(!message.is_request());
         assert!(!message.is_response());
+    }
+
+    #[test]
+    fn parse_empty_message_with_token_is_rejected() {
+        // Code 0.00 with a 1-byte token. RFC 7252 section 4.1 requires a zero token length.
+        let result = Message::parse(&[0x41, 0x00, 0x12, 0x34, 0xAA]);
+        assert_eq!(result, Err(CoapParseError::EmptyMessageWithData));
+
+        // The token length alone is enough, even when the token bytes are missing.
+        let result = Message::parse(&[0x41, 0x00, 0x12, 0x34]);
+        assert_eq!(result, Err(CoapParseError::EmptyMessageWithData));
+    }
+
+    #[test]
+    fn parse_empty_message_with_data_is_rejected() {
+        let result = Message::parse(&[0x40, 0x00, 0x12, 0x34, 0xAA]);
+        assert_eq!(result, Err(CoapParseError::EmptyMessageWithData));
     }
 
     #[test]
