@@ -316,6 +316,10 @@ impl<'buf> MessageBuilder<'buf, Complete> {
     }
 
     /// Returns the length of the packet.
+    #[allow(
+        clippy::len_without_is_empty,
+        reason = "a complete message always has a 4-byte header, so it is never empty"
+    )]
     pub fn len(&self) -> usize {
         self.offset
     }
