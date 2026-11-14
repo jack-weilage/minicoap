@@ -13,6 +13,8 @@
 #![no_std]
 #![deny(clippy::cargo, missing_docs)]
 #![warn(clippy::all)]
+// CoAP codes are conventionally written `c.dd` (2.05, 4.04), so `coap_code!(2, 05)` is intentional.
+#![allow(clippy::zero_prefixed_literal)]
 
 use num_enum::{FromPrimitive, IntoPrimitive};
 
