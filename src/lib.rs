@@ -24,7 +24,10 @@ mod parser;
 
 pub use builder::MessageBuilder;
 #[doc(hidden)]
-pub use builder::{Complete, NeedsBuffer, NeedsHeader, NeedsMessageId, NeedsPayload, NeedsToken};
+pub use builder::{
+    Complete, NeedsBuffer, NeedsEmptyMessageId, NeedsHeader, NeedsMessageId, NeedsPayload,
+    NeedsToken,
+};
 pub use error::{CoapBuildError, CoapParseError};
 pub use parser::{CoapOption, CoapOptions, Message, OptionIterator};
 
