@@ -1,0 +1,26 @@
+[changelog]
+# release-plz's default template, plus a "Breaking changes" section at the top of each release.
+# The section lists the `BREAKING CHANGE:` footer of every breaking commit, which is where a
+# commit says what users have to change.
+body = """
+
+## [{{ version }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% set breaking = commits | filter(attribute="breaking", value=true) -%}
+{% if breaking | length > 0 %}
+### Breaking changes
+
+{% for commit in breaking -%}
+- {{ commit.breaking_description | split(pat="\n") | join(sep=" ") }}
+{% endfor -%}
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+
+{% for commit in commits %}
+{%- if commit.scope -%}
+- *({{commit.scope}})* {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}{%- if commit.links %} ({% for link in commit.links %}[{{link.text}}]({{link.href}}) {% endfor -%}){% endif %}
+{% else -%}
+- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
+{% endif -%}
+{% endfor -%}
+{% endfor %}"""

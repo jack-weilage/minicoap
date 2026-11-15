@@ -7,7 +7,7 @@ keywords = ["coap", "iot", "embedded", "no-std", "protocol"]
 categories = ["embedded", "network-programming", "no-std::no-alloc"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jack-weilage/minicoap"
-exclude = [".github/"]
+exclude = [".github/", "release-plz.toml"]
 
 [dependencies]
 num_enum = { version = "0.7.4", default-features = false }
