@@ -59,7 +59,8 @@ pub enum CoapParseError {
     InvalidOptionDelta,
     /// An option has a length value of 15, which is reserved and invalid per RFC 7252.
     InvalidOptionLength,
-    /// An empty message (code 0.00) contains data after the header, which is not allowed.
+    /// An Empty message (code 0.00) has a non-zero token length or bytes after the 4-byte header.
+    /// RFC 7252 section 4.1 allows neither.
     EmptyMessageWithData,
     /// A payload marker (0xFF) was present but no payload data followed it.
     PayloadMarkerWithoutPayload,
@@ -76,7 +77,7 @@ impl core::fmt::Display for CoapParseError {
             CoapParseError::InvalidOptionDelta => write!(f, "Invalid option delta"),
             CoapParseError::InvalidOptionLength => write!(f, "Invalid option length (15)"),
             CoapParseError::EmptyMessageWithData => {
-                write!(f, "Empty message (code 0.00) contains data after header")
+                write!(f, "Empty message (code 0.00) with a token or data")
             }
             CoapParseError::PayloadMarkerWithoutPayload => {
                 write!(f, "Payload marker present but no payload data")
