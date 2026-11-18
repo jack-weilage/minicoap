@@ -25,107 +25,116 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-minicoap = "0.1.0"
+minicoap = "0.2"
 ```
 
 For embedded debugging with `defmt`:
 
 ```toml
 [dependencies]
-minicoap = { version = "0.1.0", features = ["defmt"] }
+minicoap = { version = "0.2", features = ["defmt"] }
 ```
 
 ## Usage
 
 ### Building Messages
 
-The library provides a type-safe builder API that ensures messages are constructed correctly at compile time:
+Build a confirmable GET for `/temperature/sensor` in a caller-owned buffer.
 
 ```rust
-use minicoap::{MessageBuilder, MessageType, RequestCode, OptionNumber};
+use minicoap::{CoapBuildError, MessageBuilder, MessageType, OptionNumber, RequestCode};
 
-let mut buffer = [0u8; 128];
+fn main() -> Result<(), CoapBuildError> {
+    let mut buffer = [0u8; 128];
+    let packet = MessageBuilder::new(&mut buffer)?
+        .request(MessageType::Confirmable, RequestCode::Get)
+        .message_id(0x1234)
+        .token(&[1, 2, 3, 4])?
+        .option(OptionNumber::UriPath, b"temperature")?
+        .option(OptionNumber::UriPath, b"sensor")?
+        .no_payload()
+        .build();
 
-// Build a GET request
-let packet = MessageBuilder::new(&mut buffer)?
-    .request(MessageType::Confirmable, RequestCode::Get)
-    .message_id(0x1234)
-    .token(&[0x01, 0x02, 0x03, 0x04])?
-    .option(OptionNumber::UriPath, b"temperature")?
-    .option(OptionNumber::UriPath, b"sensor")?
-    .no_payload()
-    .build();
-
-// Send packet over UDP...
+    assert_eq!(&packet[..4], &[0x44, 0x01, 0x12, 0x34]);
+    Ok(())
+}
 ```
 
 ### Parsing Messages
 
-Parse received CoAP messages with zero-copy parsing:
+The token, option values, and payload borrow from the received datagram.
 
 ```rust
-use minicoap::{Message, OptionNumber, ContentFormat};
+use minicoap::{ContentFormat, Message, OptionNumber};
 
-// Receive buffer from UDP...
-let received = [0x40, 0x01, 0x12, 0x34];
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Content response with a zero-length Content-Format value (text/plain).
+    let received = [0x60, 0x45, 0x12, 0x34, 0xc0, 0xff, b'O', b'K'];
+    let message = Message::parse(&received)?;
 
-let message = Message::parse(&received)?;
-
-println!("Version: {:?}", message.version);
-println!("Type: {:?}", message.message_type);
-println!("Code: {}.{:02}", message.code_class(), message.code_detail());
-println!("Message ID: {}", message.message_id);
-
-// Iterate over options
-for option in message.options {
-    match option.number {
-        OptionNumber::UriPath => {
-            println!("URI Path: {}", option.as_str()?);
+    for option in message.options {
+        match option.number {
+            OptionNumber::UriPath => println!("URI path segment: {}", option.as_str()?),
+            OptionNumber::ContentFormat => {
+                let value = option.as_uint().ok_or("invalid integer option")?;
+                let format = ContentFormat::from(u16::try_from(value)?);
+                assert_eq!(format, ContentFormat::TextPlain);
+            }
+            _ => {}
         }
-        OptionNumber::ContentFormat => {
-            let format: ContentFormat = (option.as_uint()? as u16).into();
-            println!("Content Format: {:?}", format);
-        }
-        _ => {}
     }
-}
-
-if let Some(payload) = message.payload {
-    println!("Payload: {:?}", payload);
+    assert_eq!(message.payload, Some(b"OK".as_slice()));
+    Ok(())
 }
 ```
 
 ### Working with Options
 
-Options can be added with different value types:
+Append options in ascending number order. To add repeated options in a loop,
+keep the builder returned by each call.
 
 ```rust
-// String options
-builder.option_string(OptionNumber::UriPath, "api")?;
-builder.option_string(OptionNumber::UriPath, "v1")?;
+use minicoap::{CoapBuildError, MessageBuilder, MessageType, OptionNumber, RequestCode};
 
-// Integer options (automatically minimally encoded)
-builder.option_uint(OptionNumber::MaxAge, 60u32)?;
-builder.option_uint(OptionNumber::ContentFormat, 50u16)?;
+fn main() -> Result<(), CoapBuildError> {
+    let mut buffer = [0; 128];
+    let mut builder = MessageBuilder::new(&mut buffer)?
+        .request(MessageType::Confirmable, RequestCode::Get)
+        .message_id(1)
+        .no_token()?
+        .option(OptionNumber::Etag, &[1, 2, 3, 4])?;
 
-// Raw byte options
-builder.option(OptionNumber::Etag, &[0x01, 0x02, 0x03, 0x04])?;
+    for segment in ["api", "v1"] {
+        builder = builder.option_string(OptionNumber::UriPath, segment)?;
+    }
+    let packet = builder.option_uint(OptionNumber::Accept, 50u16)?.no_payload().build();
+    assert!(packet.ends_with(&[50]));
+    Ok(())
+}
 ```
 
 ### Response Codes
 
-The library provides comprehensive response code support:
+Build a text response to a tokenless confirmable GET with message ID `0x1234`.
+On the development branch, `option_uint` accepts a named content format directly.
+With minicoap 0.2, pass `u16::from(ContentFormat::TextPlain)`.
 
 ```rust
-use minicoap::{ResponseCode, MessageType, OptionNumber, ContentFormat};
+use minicoap::{CoapBuildError, ContentFormat, MessageBuilder, MessageType, OptionNumber, ResponseCode};
 
-let response = MessageBuilder::new(&mut buffer)?
-    .response(MessageType::Acknowledgement, ResponseCode::Content)
-    .message_id(0x1234)
-    .no_token()?
-    .option_uint(OptionNumber::ContentFormat, ContentFormat::TextPlain)?
-    .payload(b"Hello, CoAP!")?
-    .build();
+fn main() -> Result<(), CoapBuildError> {
+    let mut buffer = [0; 128];
+    let response = MessageBuilder::new(&mut buffer)?
+        .response(MessageType::Acknowledgement, ResponseCode::Content)
+        .message_id(0x1234)
+        .no_token()?
+        .option_uint(OptionNumber::ContentFormat, ContentFormat::TextPlain)?
+        .payload(b"Hello, CoAP!")?
+        .build();
+
+    assert!(response.ends_with(b"Hello, CoAP!"));
+    Ok(())
+}
 ```
 
 ## License
