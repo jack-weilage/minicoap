@@ -9,7 +9,7 @@ A tiny, `no_std`, zero-copy Rust library for parsing and building CoAP (Constrai
 - Type-safe message builder with compile-time state checking
 - Support for all common CoAP message types, request/response codes, and options
 - Optional `defmt` support for embedded debugging
-- Comprehensive request and response code enums with RFC documentation
+- Named CoAP codes for building and parsing, with support for extension codes
 
 ## Specifications
 
@@ -37,17 +37,20 @@ minicoap = { version = "0.3", features = ["defmt"] }
 
 ## Usage
 
+These examples use the upcoming 0.4 API. For the published 0.3 API, see the
+[0.3 documentation](https://docs.rs/minicoap/0.3.0/minicoap/).
+
 ### Building Messages
 
 Build a confirmable GET for `/temperature/sensor` in a caller-owned buffer.
 
 ```rust
-use minicoap::{CoapBuildError, MessageBuilder, MessageType, OptionNumber, RequestCode};
+use minicoap::{CoapBuildError, Code, MessageBuilder, MessageType, OptionNumber};
 
 fn main() -> Result<(), CoapBuildError> {
     let mut buffer = [0u8; 128];
     let packet = MessageBuilder::new(&mut buffer)?
-        .request(MessageType::Confirmable, RequestCode::Get)
+        .header(MessageType::Confirmable, Code::GET)
         .message_id(0x1234)
         .token(&[1, 2, 3, 4])?
         .option(OptionNumber::UriPath, b"temperature")?
@@ -65,12 +68,17 @@ fn main() -> Result<(), CoapBuildError> {
 The token, option values, and payload borrow from the received datagram.
 
 ```rust
-use minicoap::{ContentFormat, Message, OptionNumber};
+use minicoap::{Code, ContentFormat, Message, OptionNumber};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Content response with a zero-length Content-Format value (text/plain).
     let received = [0x60, 0x45, 0x12, 0x34, 0xc0, 0xff, b'O', b'K'];
     let message = Message::parse(&received)?;
+
+    match message.code {
+        Code::CONTENT => {}
+        code => return Err(format!("expected content, received {code}").into()),
+    }
 
     for option in message.options {
         match option.number {
@@ -94,12 +102,12 @@ Append options in ascending number order. To add repeated options in a loop,
 keep the builder returned by each call.
 
 ```rust
-use minicoap::{CoapBuildError, MessageBuilder, MessageType, OptionNumber, RequestCode};
+use minicoap::{CoapBuildError, Code, MessageBuilder, MessageType, OptionNumber};
 
 fn main() -> Result<(), CoapBuildError> {
     let mut buffer = [0; 128];
     let mut builder = MessageBuilder::new(&mut buffer)?
-        .request(MessageType::Confirmable, RequestCode::Get)
+        .header(MessageType::Confirmable, Code::GET)
         .message_id(1)
         .no_token()?
         .option(OptionNumber::Etag, &[1, 2, 3, 4])?;
@@ -118,12 +126,12 @@ fn main() -> Result<(), CoapBuildError> {
 Build a text response to a tokenless confirmable GET with message ID `0x1234`.
 
 ```rust
-use minicoap::{CoapBuildError, ContentFormat, MessageBuilder, MessageType, OptionNumber, ResponseCode};
+use minicoap::{CoapBuildError, Code, ContentFormat, MessageBuilder, MessageType, OptionNumber};
 
 fn main() -> Result<(), CoapBuildError> {
     let mut buffer = [0; 128];
     let response = MessageBuilder::new(&mut buffer)?
-        .response(MessageType::Acknowledgement, ResponseCode::Content)
+        .header(MessageType::Acknowledgement, Code::CONTENT)
         .message_id(0x1234)
         .no_token()?
         .option_uint(OptionNumber::ContentFormat, ContentFormat::TextPlain)?
@@ -134,6 +142,18 @@ fn main() -> Result<(), CoapBuildError> {
     Ok(())
 }
 ```
+
+### Migrating message codes from 0.3
+
+Replace `.request(ty, RequestCode::Get)` with `.header(ty, Code::GET)` and
+`.response(ty, ResponseCode::Content)` with `.header(ty, Code::CONTENT)`.
+The old enums and builder methods are deprecated in 0.4.
+
+`Message::code` now holds a `Code`. Compare it directly with a named constant
+such as `Code::GET`, or use `u8::from(msg.code)` when you need the wire byte.
+Replace `msg.code_class()` with `msg.code.class()` and `msg.code_detail()` with
+`msg.code.detail()`. To display a code such as `2.05`, use `msg.code.to_string()`
+or pass it directly to a formatting macro.
 
 ## License
 
