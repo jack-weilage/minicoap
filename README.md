@@ -102,12 +102,12 @@ Append options in ascending number order. To add repeated options in a loop,
 keep the builder returned by each call.
 
 ```rust
-use minicoap::{CoapBuildError, MessageBuilder, MessageType, OptionNumber, RequestCode};
+use minicoap::{CoapBuildError, Code, MessageBuilder, MessageType, OptionNumber};
 
 fn main() -> Result<(), CoapBuildError> {
     let mut buffer = [0; 128];
     let mut builder = MessageBuilder::new(&mut buffer)?
-        .request(MessageType::Confirmable, RequestCode::Get)
+        .header(MessageType::Confirmable, Code::GET)
         .message_id(1)
         .no_token()?
         .option(OptionNumber::Etag, &[1, 2, 3, 4])?;
@@ -144,6 +144,10 @@ fn main() -> Result<(), CoapBuildError> {
 ```
 
 ### Migrating message codes from 0.3
+
+Replace `.request(ty, RequestCode::Get)` with `.header(ty, Code::GET)` and
+`.response(ty, ResponseCode::Content)` with `.header(ty, Code::CONTENT)`.
+The old enums and builder methods are deprecated in 0.4.
 
 `Message::code` now holds a `Code`. Compare it directly with a named constant
 such as `Code::GET`, or use `u8::from(msg.code)` when you need the wire byte.

@@ -310,7 +310,7 @@ impl<'a> Iterator for OptionIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MessageBuilder, OptionNumber, RequestCode};
+    use crate::{MessageBuilder, OptionNumber};
 
     extern crate alloc;
     use alloc::vec::Vec;
@@ -321,7 +321,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x1234)
             .no_token()
             .unwrap()
@@ -348,7 +348,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0xABCD)
             .token(&token)
             .unwrap()
@@ -368,7 +368,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::NonConfirmable, RequestCode::Post)
+            .header(MessageType::NonConfirmable, Code::POST)
             .message_id(0x0001)
             .no_token()
             .unwrap()
@@ -388,7 +388,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x5678)
             .no_token()
             .unwrap()
@@ -422,7 +422,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x0001)
             .no_token()
             .unwrap()
@@ -463,7 +463,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x0001)
             .no_token()
             .unwrap()
@@ -496,7 +496,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x0001)
             .no_token()
             .unwrap()
@@ -530,7 +530,7 @@ mod tests {
 
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x0001)
             .no_token()
             .unwrap()
@@ -682,7 +682,7 @@ mod tests {
         // Test with TextPlain (0)
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Post)
+            .header(MessageType::Confirmable, Code::POST)
             .message_id(0x0001)
             .no_token()
             .unwrap()
@@ -706,7 +706,7 @@ mod tests {
         let mut buffer = [0; 128];
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Post)
+            .header(MessageType::Confirmable, Code::POST)
             .message_id(0x0001)
             .no_token()
             .unwrap()
@@ -730,7 +730,7 @@ mod tests {
         let mut buffer = [0; 128];
         let packet = MessageBuilder::new(&mut buffer)
             .unwrap()
-            .request(MessageType::Confirmable, RequestCode::Post)
+            .header(MessageType::Confirmable, Code::POST)
             .message_id(0x0001)
             .no_token()
             .unwrap()

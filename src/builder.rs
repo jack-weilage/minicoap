@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use crate::{MessageType, RequestCode, ResponseCode, Version, coap_code, error::CoapBuildError};
+use crate::{Code, MessageType, Version, error::CoapBuildError};
 
 type BuilderResult<'buf, T> = core::result::Result<MessageBuilder<'buf, T>, CoapBuildError>;
 
@@ -152,19 +152,29 @@ impl<'buf> MessageBuilder<'buf, NeedsHeader> {
     }
 
     /// Convenience method for constructing a request packet.
+    #[deprecated(
+        since = "0.4.0",
+        note = "use `.header(msg_type, Code::GET)` with the appropriate code"
+    )]
+    #[allow(deprecated)]
     pub fn request(
         self,
         msg_type: MessageType,
-        code: RequestCode,
+        code: crate::RequestCode,
     ) -> MessageBuilder<'buf, NeedsMessageId> {
         self.header(msg_type, code)
     }
 
     /// Convenience method for constructing a response packet.
+    #[deprecated(
+        since = "0.4.0",
+        note = "use `.header(msg_type, Code::CONTENT)` with the appropriate code"
+    )]
+    #[allow(deprecated)]
     pub fn response(
         self,
         msg_type: MessageType,
-        code: ResponseCode,
+        code: crate::ResponseCode,
     ) -> MessageBuilder<'buf, NeedsMessageId> {
         self.header(msg_type, code)
     }
@@ -199,7 +209,7 @@ impl<'buf> MessageBuilder<'buf, NeedsHeader> {
     ///     .no_token();
     /// ```
     pub fn empty(self, msg_type: MessageType) -> MessageBuilder<'buf, NeedsEmptyMessageId> {
-        let builder = self.header(msg_type, coap_code!(0, 00));
+        let builder = self.header(msg_type, Code::EMPTY);
 
         MessageBuilder {
             buffer: builder.buffer,
@@ -402,7 +412,7 @@ mod test {
         let mut tx_buf = [0; 128];
 
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0)
             .no_token()?
             .no_payload()
@@ -484,7 +494,7 @@ mod test {
         let mut tx_buf = [0; 128];
 
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x1234)
             .token(&[1, 2, 3, 4])?
             .no_payload()
@@ -500,7 +510,7 @@ mod test {
         let mut tx_buf = [0; 128];
 
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x1234)
             .no_token()?
             .option_uint(OptionNumber::Accept, 0u8)?
@@ -528,7 +538,7 @@ mod test {
         let mut tx_buf = [0; 128];
 
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x1234)
             .no_token()?
             .option_uint(OptionNumber::MaxAge, 60u32)?
@@ -554,7 +564,7 @@ mod test {
 
         // Test with u8
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x1234)
             .no_token()?
             .option_uint(OptionNumber::Accept, 50u8)?
@@ -569,7 +579,7 @@ mod test {
         // Test with u16
         let mut tx_buf = [0; 128];
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x1234)
             .no_token()?
             .option_uint(OptionNumber::UriPort, 8080u16)?
@@ -583,7 +593,7 @@ mod test {
         // Test with u32
         let mut tx_buf = [0; 128];
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x1234)
             .no_token()?
             .option_uint(OptionNumber::MaxAge, 86400u32)?
@@ -606,7 +616,7 @@ mod test {
         for &value in &test_values {
             let mut tx_buf = [0; 128];
             let packet = MessageBuilder::new(&mut tx_buf)?
-                .request(MessageType::Confirmable, RequestCode::Get)
+                .header(MessageType::Confirmable, Code::GET)
                 .message_id(0x1234)
                 .no_token()?
                 .option_uint(OptionNumber::MaxAge, value)?
@@ -632,7 +642,7 @@ mod test {
         let mut tx_buf = [0; 6];
 
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Post)
+            .header(MessageType::Confirmable, Code::POST)
             .message_id(0x10)
             .no_token()?
             .payload(b"Z")?
@@ -648,7 +658,7 @@ mod test {
         let mut tx_buf = [0; 6];
 
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x10)
             .no_token()?
             .option(OptionNumber::UriPath, b"a")?
@@ -664,7 +674,7 @@ mod test {
         let mut tx_buf = [0; 5];
 
         let result = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Get)
+            .header(MessageType::Confirmable, Code::GET)
             .message_id(0x10)
             .no_token()?
             .option(OptionNumber::UriPath, b"a");
@@ -679,7 +689,7 @@ mod test {
         let value = [0xABu8; 300];
 
         let packet = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Put)
+            .header(MessageType::Confirmable, Code::PUT)
             .message_id(0x22)
             .no_token()?
             .option(OptionNumber::UriPath, &value)?
@@ -702,7 +712,7 @@ mod test {
         let value = vec![0u8; 269 + usize::from(u16::MAX) + 1];
 
         let result = MessageBuilder::new(&mut tx_buf)?
-            .request(MessageType::Confirmable, RequestCode::Put)
+            .header(MessageType::Confirmable, Code::PUT)
             .message_id(1)
             .no_token()?
             .option(OptionNumber::UriPath, &value);
