@@ -1,4 +1,7 @@
 /// Errors that can occur when building a CoAP message.
+///
+/// Future releases may add variants. Include a fallback arm when matching this error.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CoapBuildError {
@@ -40,6 +43,9 @@ impl core::fmt::Display for CoapBuildError {
 impl core::error::Error for CoapBuildError {}
 
 /// Errors that can occur when parsing a CoAP message.
+///
+/// Future releases may add variants. Include a fallback arm when matching this error.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum CoapParseError {
