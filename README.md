@@ -25,14 +25,14 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-minicoap = "0.2"
+minicoap = "0.3"
 ```
 
 For embedded debugging with `defmt`:
 
 ```toml
 [dependencies]
-minicoap = { version = "0.2", features = ["defmt"] }
+minicoap = { version = "0.3", features = ["defmt"] }
 ```
 
 ## Usage
@@ -116,8 +116,6 @@ fn main() -> Result<(), CoapBuildError> {
 ### Response Codes
 
 Build a text response to a tokenless confirmable GET with message ID `0x1234`.
-On the development branch, `option_uint` accepts a named content format directly.
-With minicoap 0.2, pass `u16::from(ContentFormat::TextPlain)`.
 
 ```rust
 use minicoap::{CoapBuildError, ContentFormat, MessageBuilder, MessageType, OptionNumber, ResponseCode};
