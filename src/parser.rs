@@ -3,11 +3,23 @@ use crate::{MessageType, OptionNumber, Version};
 
 type ParseResult<T> = core::result::Result<T, CoapParseError>;
 
-/// Read a big-endian `u16` at `offset`, or `None` if the buffer is too short.
-fn read_be_u16(data: &[u8], offset: usize) -> Option<u16> {
-    let end = offset.checked_add(2)?;
-    let bytes = <[u8; 2]>::try_from(data.get(offset..end)?).ok()?;
-    Some(u16::from_be_bytes(bytes))
+// The caller rejects reserved nibbles before consuming either extension.
+fn read_field(nibble: u8, bytes: &mut &[u8]) -> ParseResult<u32> {
+    match nibble {
+        13 => {
+            let (ext, rest) = bytes.split_first().ok_or(CoapParseError::MessageTooShort)?;
+            *bytes = rest;
+            Ok(13 + u32::from(*ext))
+        }
+        14 => {
+            let (ext, rest) = bytes
+                .split_first_chunk::<2>()
+                .ok_or(CoapParseError::MessageTooShort)?;
+            *bytes = rest;
+            Ok(269 + u32::from(u16::from_be_bytes(*ext)))
+        }
+        _ => Ok(nibble.into()),
+    }
 }
 
 /// Parsed CoAP message representation
@@ -73,124 +85,22 @@ impl<'a> Message<'a> {
 
         let token = &buffer[4..4 + token_len];
 
-        let mut offset = 4 + token_len;
-
-        let options_start = offset;
-        let mut options_end = offset;
-        let mut payload_start = None;
-        let mut option_number: u16 = 0;
-
-        while offset < buffer.len() {
-            let Some(&header) = buffer.get(offset) else {
-                break;
-            };
-            if header == 0xFF {
-                payload_start = Some(
-                    offset
-                        .checked_add(1)
-                        .ok_or(CoapParseError::MessageTooShort)?,
-                );
-                options_end = offset;
-                break;
-            }
-
-            let delta = (header >> 4) & 0x0F;
-            let length = header & 0x0F;
-
-            if delta == 15 {
-                return Err(CoapParseError::InvalidOptionDelta);
-            }
-
-            offset = offset
-                .checked_add(1)
-                .ok_or(CoapParseError::MessageTooShort)?;
-
-            let delta_ext_len: usize = match delta {
-                13 => 1,
-                14 => 2,
-                _ => 0,
-            };
-
-            let length_ext_len: usize = match length {
-                13 => 1,
-                14 => 2,
-                15 => return Err(CoapParseError::InvalidOptionLength),
-                _ => 0,
-            };
-
-            let ext_bytes = delta_ext_len
-                .checked_add(length_ext_len)
-                .ok_or(CoapParseError::MessageTooShort)?;
-            let ext_end = offset
-                .checked_add(ext_bytes)
-                .ok_or(CoapParseError::MessageTooShort)?;
-            if ext_end > buffer.len() {
-                return Err(CoapParseError::MessageTooShort);
-            }
-
-            let actual_delta = match delta {
-                0..=12 => delta as u16,
-                13 => {
-                    let ext = *buffer.get(offset).ok_or(CoapParseError::MessageTooShort)?;
-                    ext as u16 + 13
+        let body = &buffer[4 + token_len..];
+        let mut cursor = CoapOptions { data: body }.into_iter();
+        let payload = loop {
+            match cursor.data {
+                [] => break None,
+                [0xff] => return Err(CoapParseError::PayloadMarkerWithoutPayload),
+                [0xff, payload @ ..] => break Some(payload),
+                _ => {
+                    cursor.decode_option()?;
                 }
-                14 => {
-                    let ext = read_be_u16(buffer, offset).ok_or(CoapParseError::MessageTooShort)?;
-                    ext.checked_add(269)
-                        .ok_or(CoapParseError::InvalidOptionDelta)?
-                }
-                _ => return Err(CoapParseError::InvalidOptionDelta),
-            };
-            option_number = option_number
-                .checked_add(actual_delta)
-                .ok_or(CoapParseError::InvalidOptionDelta)?;
-
-            offset = offset
-                .checked_add(delta_ext_len)
-                .ok_or(CoapParseError::MessageTooShort)?;
-
-            let value_len = match length {
-                0..=12 => length as usize,
-                13 => {
-                    let ext = *buffer.get(offset).ok_or(CoapParseError::MessageTooShort)? as usize;
-                    ext.checked_add(13)
-                        .ok_or(CoapParseError::InvalidOptionLength)?
-                }
-                14 => {
-                    let ext = read_be_u16(buffer, offset).ok_or(CoapParseError::MessageTooShort)?
-                        as usize;
-                    ext.checked_add(269)
-                        .ok_or(CoapParseError::InvalidOptionLength)?
-                }
-                _ => return Err(CoapParseError::InvalidOptionLength),
-            };
-
-            offset = offset
-                .checked_add(length_ext_len)
-                .ok_or(CoapParseError::MessageTooShort)?;
-
-            let value_end = offset
-                .checked_add(value_len)
-                .ok_or(CoapParseError::MessageTooShort)?;
-            if value_end > buffer.len() {
-                return Err(CoapParseError::MessageTooShort);
             }
-
-            offset = value_end;
-            options_end = offset;
-        }
-
-        let options = CoapOptions {
-            data: buffer
-                .get(options_start..options_end)
-                .ok_or(CoapParseError::MessageTooShort)?,
         };
-
-        let payload = match payload_start {
-            None => None,
-            // `start == buffer.len()` is a payload marker with nothing after it.
-            Some(start) if start < buffer.len() => buffer.get(start..),
-            Some(_) => return Err(CoapParseError::PayloadMarkerWithoutPayload),
+        let options = CoapOptions {
+            data: body
+                .get(..body.len() - cursor.data.len())
+                .ok_or(CoapParseError::MessageTooShort)?,
         };
 
         Ok(Message {
@@ -244,7 +154,6 @@ impl<'a> IntoIterator for CoapOptions<'a> {
     fn into_iter(self) -> Self::IntoIter {
         OptionIterator {
             data: self.data,
-            offset: 0,
             current_option_number: 0,
         }
     }
@@ -255,11 +164,7 @@ impl<'a> IntoIterator for &CoapOptions<'a> {
     type IntoIter = OptionIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        OptionIterator {
-            data: self.data,
-            offset: 0,
-            current_option_number: 0,
-        }
+        (*self).into_iter()
     }
 }
 
@@ -355,65 +260,48 @@ impl<'a> CoapOption<'a> {
 /// Iterator over CoAP options
 pub struct OptionIterator<'a> {
     data: &'a [u8],
-    offset: usize,
     current_option_number: u16,
+}
+
+impl<'a> OptionIterator<'a> {
+    fn decode_option(&mut self) -> ParseResult<CoapOption<'a>> {
+        let (&header, mut rest) = self
+            .data
+            .split_first()
+            .ok_or(CoapParseError::MessageTooShort)?;
+        let delta = header >> 4;
+        let length = header & 15;
+        if delta == 15 {
+            return Err(CoapParseError::InvalidOptionDelta);
+        }
+        if length == 15 {
+            return Err(CoapParseError::InvalidOptionLength);
+        }
+
+        // Check both extensions for truncation before checking for numeric overflow.
+        let delta = read_field(delta, &mut rest)?;
+        let length = read_field(length, &mut rest)?;
+        let number = u16::try_from(u32::from(self.current_option_number) + delta)
+            .map_err(|_| CoapParseError::InvalidOptionDelta)?;
+        let length = usize::try_from(length).map_err(|_| CoapParseError::InvalidOptionLength)?;
+        let (value, remaining) = rest
+            .split_at_checked(length)
+            .ok_or(CoapParseError::MessageTooShort)?;
+        self.data = remaining;
+        self.current_option_number = number;
+        Ok(CoapOption {
+            number: number.into(),
+            value,
+        })
+    }
 }
 
 impl<'a> Iterator for OptionIterator<'a> {
     type Item = CoapOption<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let header_byte = *self.data.get(self.offset)?;
-        let delta = (header_byte >> 4) & 0x0F;
-        let length = header_byte & 0x0F;
-
-        if delta == 15 {
-            return None;
-        }
-
-        self.offset = self.offset.checked_add(1)?;
-
-        let actual_delta = match delta {
-            0..=12 => delta as u16,
-            13 => {
-                let ext = *self.data.get(self.offset)? as u16;
-                self.offset = self.offset.checked_add(1)?;
-                ext.checked_add(13)?
-            }
-            14 => {
-                let ext = read_be_u16(self.data, self.offset)?;
-                self.offset = self.offset.checked_add(2)?;
-                ext.checked_add(269)?
-            }
-            _ => return None,
-        };
-
-        self.current_option_number = self.current_option_number.checked_add(actual_delta)?;
-
-        let actual_length = match length {
-            0..=12 => length as usize,
-            13 => {
-                let ext = *self.data.get(self.offset)? as usize;
-                self.offset = self.offset.checked_add(1)?;
-                ext.checked_add(13)?
-            }
-            14 => {
-                let ext = read_be_u16(self.data, self.offset)? as usize;
-                self.offset = self.offset.checked_add(2)?;
-                ext.checked_add(269)?
-            }
-            // 15 is reserved. Every other value is excluded by the 4-bit mask.
-            _ => return None,
-        };
-
-        let end = self.offset.checked_add(actual_length)?;
-        let value = self.data.get(self.offset..end)?;
-        self.offset = end;
-
-        Some(CoapOption {
-            number: OptionNumber::from(self.current_option_number),
-            value,
-        })
+        // Public iterators only contain options already validated by Message::parse.
+        self.decode_option().ok()
     }
 }
 
@@ -754,6 +642,20 @@ mod tests {
             }
             Err(other) => panic!("unexpected error: {other}"),
         }
+    }
+
+    #[test]
+    fn malformed_option_error_precedence() {
+        // A reserved length takes precedence over a missing delta extension.
+        assert_eq!(
+            Message::parse(&[0x40, 1, 0, 0, 0xef]),
+            Err(CoapParseError::InvalidOptionLength)
+        );
+        // A missing length extension takes precedence over an overflowing delta.
+        assert_eq!(
+            Message::parse(&[0x40, 1, 0, 0, 0xed, 0xff, 0xff]),
+            Err(CoapParseError::MessageTooShort)
+        );
     }
 
     #[test]
