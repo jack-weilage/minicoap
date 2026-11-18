@@ -93,7 +93,7 @@ impl<'a> Message<'a> {
                 [0xff] => return Err(CoapParseError::PayloadMarkerWithoutPayload),
                 [0xff, payload @ ..] => break Some(payload),
                 _ => {
-                    cursor.decode_option()?;
+                    cursor.try_next_option()?;
                 }
             }
         };
@@ -264,7 +264,7 @@ pub struct OptionIterator<'a> {
 }
 
 impl<'a> OptionIterator<'a> {
-    fn decode_option(&mut self) -> ParseResult<CoapOption<'a>> {
+    fn try_next_option(&mut self) -> ParseResult<CoapOption<'a>> {
         let (&header, mut rest) = self
             .data
             .split_first()
@@ -301,7 +301,7 @@ impl<'a> Iterator for OptionIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Public iterators only contain options already validated by Message::parse.
-        self.decode_option().ok()
+        self.try_next_option().ok()
     }
 }
 
