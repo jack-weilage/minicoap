@@ -8,6 +8,7 @@
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 mod builder;
+mod code;
 pub(crate) mod error;
 mod parser;
 
@@ -17,6 +18,7 @@ pub use builder::{
     Complete, NeedsBuffer, NeedsEmptyMessageId, NeedsHeader, NeedsMessageId, NeedsPayload,
     NeedsToken,
 };
+pub use code::Code;
 pub use error::{CoapBuildError, CoapParseError};
 pub use parser::{CoapOption, CoapOptions, Message, OptionIterator};
 

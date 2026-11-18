@@ -1,5 +1,5 @@
 use crate::error::CoapParseError;
-use crate::{MessageType, OptionNumber, Version};
+use crate::{Code, MessageType, OptionNumber, Version};
 
 type ParseResult<T> = core::result::Result<T, CoapParseError>;
 
@@ -33,7 +33,7 @@ pub struct Message<'a> {
     /// Token bytes for request/response matching
     pub token: &'a [u8],
     /// Message code (method for requests, response code for responses)
-    pub code: u8,
+    pub code: Code,
     /// Message ID for duplicate detection and message correlation
     pub message_id: u16,
     /// Collection of options in the message
@@ -69,11 +69,11 @@ impl<'a> Message<'a> {
             return Err(CoapParseError::InvalidTokenLength(token_len));
         }
 
-        let code = buffer[1];
+        let code = Code::from(buffer[1]);
 
         // An Empty message is the 4-byte header and nothing else: no token, options or payload
         // (RFC 7252 section 4.1).
-        if code == 0 && (token_len != 0 || buffer.len() > 4) {
+        if code.is_empty() && (token_len != 0 || buffer.len() > 4) {
             return Err(CoapParseError::EmptyMessageWithData);
         }
 
@@ -114,29 +114,31 @@ impl<'a> Message<'a> {
         })
     }
 
-    /// Extract the class portion of the code (upper 3 bits)
+    /// Returns the upper three bits of the code. See [`Code::class`].
+    #[deprecated(since = "0.4.0", note = "use `msg.code.class()` instead")]
     pub fn code_class(&self) -> u8 {
-        self.code >> 5
+        self.code.class()
     }
 
-    /// Extract the detail portion of the code (lower 5 bits)
+    /// Returns the lower five bits of the code. See [`Code::detail`].
+    #[deprecated(since = "0.4.0", note = "use `msg.code.detail()` instead")]
     pub fn code_detail(&self) -> u8 {
-        self.code & 0x1F
+        self.code.detail()
     }
 
     /// Check if this message is a request
     pub fn is_request(&self) -> bool {
-        self.code_class() == 0 && self.code_detail() != 0
+        self.code.is_request()
     }
 
     /// Check if this message is a response
     pub fn is_response(&self) -> bool {
-        matches!(self.code_class(), 2 | 4 | 5)
+        self.code.is_response()
     }
 
     /// Check if this message is empty (code 0.00)
     pub fn is_empty(&self) -> bool {
-        self.code == 0
+        self.code.is_empty()
     }
 }
 
@@ -330,7 +332,7 @@ mod tests {
 
         assert_eq!(message.version, Version::V1);
         assert_eq!(message.message_type, MessageType::Confirmable);
-        assert_eq!(message.code, 0x01);
+        assert_eq!(message.code, Code::GET);
         assert_eq!(message.message_id, 0x1234);
         assert_eq!(message.token, &[]);
         assert!(message.payload.is_none());
@@ -559,7 +561,7 @@ mod tests {
 
         let message = Message::parse(packet).unwrap();
 
-        assert_eq!(message.code, 0);
+        assert_eq!(message.code, Code::EMPTY);
         assert!(message.is_empty());
         assert!(!message.is_request());
         assert!(!message.is_response());

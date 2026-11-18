@@ -125,6 +125,9 @@ impl<'buf> MessageBuilder<'buf, NeedsBuffer> {
 impl<'buf> MessageBuilder<'buf, NeedsHeader> {
     /// Construct a header for a CoAP packet.
     ///
+    /// Pass a named [`Code`](crate::Code) such as [`Code::GET`](crate::Code::GET),
+    /// a parsed [`Message::code`](crate::Message::code), or a raw wire byte.
+    ///
     /// For an Empty message (code 0.00) use [`empty`](Self::empty) or [`ping`](Self::ping).
     /// An Empty message must not carry a token, options or a payload, and this method cannot
     /// check that for a raw code.
